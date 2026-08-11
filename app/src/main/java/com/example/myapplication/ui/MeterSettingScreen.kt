@@ -36,6 +36,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.example.myapplication.nfc.A101Command
 import com.example.myapplication.nfc.A102Command
 import com.example.myapplication.nfc.A103Command
 import com.example.myapplication.nfc.A105Command
@@ -43,7 +44,8 @@ import com.example.myapplication.nfc.NfcWriteState
 import com.example.myapplication.ui.theme.MyApplicationTheme
 
 enum class CommandType(val title: String, val prefix: String) {
-    NFC_EXIT("NFC 탈출 (A102)", "A102"),
+    NFC_START("NFC 모드 진입 (A101)", "A101"),
+    NFC_EXIT("NFC 모드 종료 (A102)", "A102"),
     METER_NUMBER("계량기 번호 설정 (A103)", "A103"),
     METER_VALUE("검침 값 설정 (A105)", "A105")
 }
@@ -53,7 +55,7 @@ enum class CommandType(val title: String, val prefix: String) {
 fun MeterSettingScreen(
     integerPart: String,
     decimalPart: String,
-    singleValue: String, // A105 단일 8자리 입력값
+    singleValue: String,
     writeState: NfcWriteState,
     nfcAvailable: Boolean,
     nfcEnabled: Boolean,
@@ -70,18 +72,21 @@ fun MeterSettingScreen(
     var expanded by remember { mutableStateOf(false) }
 
     val isValid = when (selectedType) {
+        CommandType.NFC_START -> A101Command.isValid()
         CommandType.NFC_EXIT -> A102Command.isValid()
         CommandType.METER_NUMBER -> A103Command.isValid(integerPart, decimalPart)
         CommandType.METER_VALUE -> A105Command.isValid(singleValue)
     }
 
     val displayValue = when (selectedType) {
+        CommandType.NFC_START -> A101Command.formatDisplay()
         CommandType.NFC_EXIT -> A102Command.formatDisplay()
         CommandType.METER_NUMBER -> if (isValid) A103Command.formatDisplay(integerPart, decimalPart) else "--"
         CommandType.METER_VALUE -> if (isValid) A105Command.formatDisplay(singleValue) else "--"
     }
 
     val command = when (selectedType) {
+        CommandType.NFC_START -> A101Command.formatPayload()
         CommandType.NFC_EXIT -> A102Command.formatPayload()
         CommandType.METER_NUMBER -> if (isValid) A103Command.formatPayload(integerPart, decimalPart) else "A103--------"
         CommandType.METER_VALUE -> if (isValid) A105Command.formatPayload(singleValue) else "A105--------"
@@ -101,7 +106,6 @@ fun MeterSettingScreen(
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // 1. 드롭다운 선택
             ExposedDropdownMenuBox(
                 expanded = expanded,
                 onExpandedChange = { expanded = !expanded }
@@ -210,12 +214,13 @@ fun MeterSettingScreen(
                             }
                         },
                         enabled = inputEnabled,
-                        label = { Text("검침 값 (8자리 숫자)") },
+                        label = { Text("검침 값 (Ton 단위: 5자리 + 소수점 3자리)") },
                         placeholder = { Text("12345678") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     )
                 }
+                CommandType.NFC_START -> { /* 입력 필드 없음 */ }
                 CommandType.NFC_EXIT -> { /* 입력 필드 없음 */ }
             }
 

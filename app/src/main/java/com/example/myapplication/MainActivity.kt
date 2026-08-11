@@ -15,6 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.example.myapplication.nfc.A101Command
 import com.example.myapplication.nfc.A102Command
 import com.example.myapplication.nfc.A103Command
 import com.example.myapplication.nfc.A105Command
@@ -112,6 +113,7 @@ class MainActivity : ComponentActivity() {
     private fun preparePendingData(commandType: CommandType, payload: String) {
         pendingCommand = payload
         pendingDisplayValue = when (commandType) {
+            CommandType.NFC_START -> A101Command.formatDisplay()
             CommandType.NFC_EXIT -> A102Command.formatDisplay()
             CommandType.METER_NUMBER -> A103Command.formatDisplay(integerPart, decimalPart)
             CommandType.METER_VALUE -> A105Command.formatDisplay(singleValue)

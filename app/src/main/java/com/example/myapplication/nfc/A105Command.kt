@@ -2,11 +2,12 @@ package com.example.myapplication.nfc
 
 object A105Command {
     const val PREFIX = "A105"
-
     fun formatDisplay(value: String): String {
-        return value.padStart(8, '0').takeLast(8)
+        val padded = value.padStart(8, '0').takeLast(8)
+        val integerPart = padded.substring(0, 5)
+        val decimalPart = padded.substring(5)
+        return "$integerPart.$decimalPart"
     }
-
     fun formatPayload(value: String): String {
         val padded = value.padStart(8, '0').takeLast(8)
         return "$PREFIX$padded"
