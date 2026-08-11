@@ -1,0 +1,8 @@
+package com.example.myapplication.nfc
+
+object A101Command {
+    const val PREFIX = "A102"
+    fun formatDisplay(): String = "A102 (NFC 모드 종료)"
+    fun formatPayload(): String = PREFIX
+    fun isValid(): Boolean = true
+}
