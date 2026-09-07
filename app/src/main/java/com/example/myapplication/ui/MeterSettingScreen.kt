@@ -40,6 +40,8 @@ import com.example.myapplication.nfc.A101Command
 import com.example.myapplication.nfc.A102Command
 import com.example.myapplication.nfc.A103Command
 import com.example.myapplication.nfc.A105Command
+import com.example.myapplication.nfc.A107Command
+import com.example.myapplication.nfc.A109Command
 import com.example.myapplication.nfc.NfcWriteState
 import com.example.myapplication.ui.theme.MyApplicationTheme
 
@@ -47,7 +49,9 @@ enum class CommandType(val title: String, val prefix: String) {
     NFC_START("NFC 모드 진입 (A101)", "A101"),
     NFC_EXIT("NFC 모드 종료 (A102)", "A102"),
     METER_NUMBER("계량기 번호 설정 (A103)", "A103"),
-    METER_VALUE("검침 값 설정 (A105)", "A105")
+    METER_VALUE("검침 값 설정 (A105)", "A105"),
+    REPORT_CYCLE("검침 주기 설정 (A107)", "A107"),
+    DEV_RESET("단말 RESET (A109)", "A109"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -60,6 +64,7 @@ fun MeterSettingScreen(
     nfcAvailable: Boolean,
     nfcEnabled: Boolean,
     showConfirmDialog: Boolean,
+    isNfcSessionActive: Boolean = false, // 👈 추가된 세션 상태
     onIntegerChange: (String) -> Unit,
     onDecimalChange: (String) -> Unit,
     onSingleValueChange: (String) -> Unit,
@@ -70,12 +75,15 @@ fun MeterSettingScreen(
 ) {
     var selectedType by remember { mutableStateOf(CommandType.METER_NUMBER) }
     var expanded by remember { mutableStateOf(false) }
+    val availableCommands = CommandType.entries
 
     val isValid = when (selectedType) {
         CommandType.NFC_START -> A101Command.isValid()
         CommandType.NFC_EXIT -> A102Command.isValid()
         CommandType.METER_NUMBER -> A103Command.isValid(integerPart, decimalPart)
         CommandType.METER_VALUE -> A105Command.isValid(singleValue)
+        CommandType.REPORT_CYCLE -> A107Command.isValid(singleValue)
+        CommandType.DEV_RESET -> A109Command.isValid()
     }
 
     val displayValue = when (selectedType) {
@@ -83,6 +91,8 @@ fun MeterSettingScreen(
         CommandType.NFC_EXIT -> A102Command.formatDisplay()
         CommandType.METER_NUMBER -> if (isValid) A103Command.formatDisplay(integerPart, decimalPart) else "--"
         CommandType.METER_VALUE -> if (isValid) A105Command.formatDisplay(singleValue) else "--"
+        CommandType.REPORT_CYCLE -> if (isValid) A107Command.formatDisplay(singleValue) else "--"
+        CommandType.DEV_RESET -> A109Command.formatDisplay()
     }
 
     val command = when (selectedType) {
@@ -90,6 +100,8 @@ fun MeterSettingScreen(
         CommandType.NFC_EXIT -> A102Command.formatPayload()
         CommandType.METER_NUMBER -> if (isValid) A103Command.formatPayload(integerPart, decimalPart) else "A103--------"
         CommandType.METER_VALUE -> if (isValid) A105Command.formatPayload(singleValue) else "A105--------"
+        CommandType.REPORT_CYCLE -> if (isValid) A107Command.formatPayload(singleValue) else "A107--"
+        CommandType.DEV_RESET -> A109Command.formatPayload()
     }
 
     val inputEnabled = writeState !is NfcWriteState.AwaitingTag && writeState !is NfcWriteState.Writing
@@ -125,7 +137,7 @@ fun MeterSettingScreen(
                     expanded = expanded,
                     onDismissRequest = { expanded = false }
                 ) {
-                    CommandType.values().forEach { type ->
+                    availableCommands.forEach { type ->
                         DropdownMenuItem(
                             text = { Text(type.title) },
                             onClick = {
@@ -151,7 +163,7 @@ fun MeterSettingScreen(
                 )
             }
 
-            // 2. 입력 UI 분기
+            // 입력 UI 분기
             when (selectedType) {
                 CommandType.METER_NUMBER -> {
                     Text(
@@ -220,11 +232,33 @@ fun MeterSettingScreen(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     )
                 }
-                CommandType.NFC_START -> { /* 입력 필드 없음 */ }
+                CommandType.REPORT_CYCLE -> {
+                    Text(
+                        text = "검침 주기 입력 (1byte)",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    OutlinedTextField(
+                        modifier = Modifier.fillMaxWidth(),
+                        value = singleValue,
+                        onValueChange = { value ->
+                            val next = value.uppercase()
+                            if (next.length <= 2 && next.all { it.isDigit() || it in 'A'..'F' }) {
+                                onSingleValueChange(next)
+                            }
+                        },
+                        enabled = inputEnabled,
+                        label = { Text("전송 주기 설정값 (예: 06 = 6시간 주기보고)") },
+                        placeholder = { Text("06") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                    )
+                }
+                CommandType.DEV_RESET,
+                CommandType.NFC_START,
                 CommandType.NFC_EXIT -> { /* 입력 필드 없음 */ }
             }
 
-            // 3. 미리보기
+            // 미리보기 카드
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -260,7 +294,7 @@ fun MeterSettingScreen(
                 }
             }
 
-            // 4. 전송 버튼
+            // 전송 버튼
             Button(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -370,6 +404,7 @@ fun MeterSettingScreenPreview() {
             nfcAvailable = true,
             nfcEnabled = true,
             showConfirmDialog = false,
+            isNfcSessionActive = false,
             onIntegerChange = {},
             onDecimalChange = {},
             onSingleValueChange = {},

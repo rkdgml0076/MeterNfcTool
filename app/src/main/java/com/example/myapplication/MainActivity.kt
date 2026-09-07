@@ -19,6 +19,8 @@ import com.example.myapplication.nfc.A101Command
 import com.example.myapplication.nfc.A102Command
 import com.example.myapplication.nfc.A103Command
 import com.example.myapplication.nfc.A105Command
+import com.example.myapplication.nfc.A107Command
+import com.example.myapplication.nfc.A109Command
 import com.example.myapplication.nfc.NfcWriteState
 import com.example.myapplication.nfc.NfcWriter
 import com.example.myapplication.ui.CommandType
@@ -117,6 +119,8 @@ class MainActivity : ComponentActivity() {
             CommandType.NFC_EXIT -> A102Command.formatDisplay()
             CommandType.METER_NUMBER -> A103Command.formatDisplay(integerPart, decimalPart)
             CommandType.METER_VALUE -> A105Command.formatDisplay(singleValue)
+            CommandType.REPORT_CYCLE -> A107Command.formatDisplay(singleValue)
+            CommandType.DEV_RESET -> A109Command.formatDisplay()
         }
     }
 
@@ -154,10 +158,7 @@ class MainActivity : ComponentActivity() {
 
             writeState = if (result.isSuccess) {
                 vibrateSuccess()
-                NfcWriteState.Success(
-                    displayValue = displayValue,
-                    command = command,
-                )
+                NfcWriteState.Success(displayValue = displayValue)
             } else {
                 NfcWriteState.Error(
                     message = result.exceptionOrNull()?.message ?: "NFC Write에 실패했습니다.",
