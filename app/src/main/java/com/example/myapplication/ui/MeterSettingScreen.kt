@@ -68,6 +68,7 @@ fun MeterSettingScreen(
     onIntegerChange: (String) -> Unit,
     onDecimalChange: (String) -> Unit,
     onSingleValueChange: (String) -> Unit,
+    onCommandTypeChange: (CommandType) -> Unit = {},
     onWriteClick: (commandType: CommandType, payload: String) -> Unit,
     onConfirmWrite: (commandType: CommandType, payload: String) -> Unit,
     onDismissConfirm: () -> Unit,
@@ -141,6 +142,9 @@ fun MeterSettingScreen(
                         DropdownMenuItem(
                             text = { Text(type.title) },
                             onClick = {
+                                if (type != selectedType) {
+                                    onCommandTypeChange(type)
+                                }
                                 selectedType = type
                                 expanded = false
                             }

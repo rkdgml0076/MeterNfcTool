@@ -1,4 +1,176 @@
-### 2026-09-07 GitHub First Commit
+### 2026-09-08 GitHub Commit
+#### 본 어플리케이션을 개발하기 위한 기본 작업 환경과 코드 프레임
+## 작업 환경 설정
+- 개발 환경(Code Editer) Android Studio 사용 <br>
+- MyApplication 기본 양식대로 Project 생성
+- Github 와 연동 및 git 활용을 위하여 git Download
+  Android Studio는 기본적으로 Git과 GitHub가 Plugins 되어있음
+- 코드 결과물 확인은 Clean and Assemble Project with Tests로 매번 빌드하여 확인중
+별도의 동작 결과 방법을 찾을 시 추후 기술
+- APK 파일 경로: 사용자디렉토리\AndroidStudioProjects\MyApplication\app\build\outputs\apk\debug\app-debug.apk
+
+
+## BugFix
+<br>
+A105, A107 메뉴 변경 시에도 입력 값 유지되던 버그 FIX
+
+### MeterSettingScreen(kt)
+```kt
+onCommandTypeChange: (CommandType) -> Unit = {},
+
+if (type != selectedType) {
+    onCommandTypeChange(type)
+}
+```
+
+### MeterSettingViewModel(kt)
+```kt
+fun onCommandTypeChange(@Suppress("UNUSED_PARAMETER") commandType: CommandType) {
+    _uiState.update {
+        it.copy(
+            singleValue = "",
+            showConfirmDialog = false,
+            pendingCommandType = null,
+            pendingPayload = "",
+        )
+    }
+}
+```
+
+### MainActivity(kt)
+```kt
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.example.myapplication.ui.BootSplashScreen
+
+var showSplash by rememberSaveable { mutableStateOf(true) }
+
+if (showSplash) {
+    BootSplashScreen(
+        modifier = Modifier.fillMaxSize(),
+        onFinished = { showSplash = false },
+    )
+} else {
+    MeterSettingScreen(
+        modifier = Modifier.fillMaxSize(),
+        integerPart = integerPart,
+        decimalPart = decimalPart,
+        singleValue = singleValue,
+        writeState = writeState,
+        nfcAvailable = nfcAvailable,
+        nfcEnabled = nfcEnabled,
+        showConfirmDialog = showConfirmDialog,
+        onIntegerChange = ::onIntegerChanged,
+        onDecimalChange = ::onDecimalChanged,
+        onSingleValueChange = ::onSingleValueChanged,
+        onCommandTypeChange = ::onCommandTypeChanged,
+        onWriteClick = { commandType, payload ->
+            preparePendingData(commandType, payload)
+            showConfirmDialog = true
+        },
+        onConfirmWrite = { commandType, payload ->
+            startWrite(commandType, payload)
+        },
+        onDismissConfirm = { showConfirmDialog = false },
+    )
+}
+
+private fun onCommandTypeChanged(@Suppress("UNUSED_PARAMETER") commandType: CommandType) {
+    // A105와 A107이 같은 입력 상태를 공유하므로, 메뉴 전환 시 이전 값을 비운다.
+    singleValue = ""
+    showConfirmDialog = false
+    pendingCommand = null
+    pendingDisplayValue = null
+    resetResultStateIfNeeded()
+}
+```
+
+### BootSplashScreen(kt)
+```kt
+package com.example.myapplication.ui
+
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import com.example.myapplication.R
+import kotlinx.coroutines.delay
+
+private val SplashBackground = Color(0xFFF7F7F7)
+private const val SplashDurationMs = 2_500L
+private const val SplashFadeMs = 200
+
+@Composable
+fun BootSplashScreen(
+    onFinished: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var visible by remember { mutableStateOf(true) }
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(durationMillis = SplashFadeMs),
+        label = "bootSplashAlpha",
+    )
+
+    LaunchedEffect(Unit) {
+        delay(SplashDurationMs)
+        visible = false
+        delay(SplashFadeMs.toLong())
+        onFinished()
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(SplashBackground)
+            .alpha(alpha),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.boot_img),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+        )
+    }
+}
+```
+
+### themes(xml)
+```xml
+    <style name="Theme.MyApplication" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@drawable/boot_img</item>
+    </style>
+```
+
+<br>
+
+### 진행 내용
+**Test Box Insert Bug Fix**
+1. A105(검침 값)와 A107(검침 주기)이 같은 입력값(singleValue)을 쓰고, 메뉴만 바꿔도 그 값을 비우지 않았음
+ - 설정 메뉴를 다른 항목으로 바꾸면 공유 입력을 비우도록 변경
+ - 설정 메뉴를 다른 항목으로 바꾸면 확인 다이얼로그와 대기 중인 NFC 명령도 취소
+2. 어플 접속 메인 이미지 추가
+--Image 참고-- <br>
+<img width="768" height="1376" alt="Image" src="https://github.com/user-attachments/assets/e394ee34-7b6d-49c2-a9a6-8f6b3f5d4a5c" />
+<br>
+
+---
+
+### 2026-09-07 GitHub Commit
 #### 본 어플리케이션을 개발하기 위한 기본 작업 환경과 코드 프레임
 ## 작업 환경 설정
 - 개발 환경(Code Editer) Android Studio 사용 <br>

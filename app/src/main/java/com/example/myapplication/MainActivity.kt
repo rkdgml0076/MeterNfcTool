@@ -13,6 +13,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.example.myapplication.nfc.A101Command
@@ -23,6 +24,7 @@ import com.example.myapplication.nfc.A107Command
 import com.example.myapplication.nfc.A109Command
 import com.example.myapplication.nfc.NfcWriteState
 import com.example.myapplication.nfc.NfcWriter
+import com.example.myapplication.ui.BootSplashScreen
 import com.example.myapplication.ui.CommandType
 import com.example.myapplication.ui.MeterSettingScreen
 import com.example.myapplication.ui.theme.MyApplicationTheme
@@ -51,27 +53,37 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
-                MeterSettingScreen(
-                    modifier = Modifier.fillMaxSize(),
-                    integerPart = integerPart,
-                    decimalPart = decimalPart,
-                    singleValue = singleValue,
-                    writeState = writeState,
-                    nfcAvailable = nfcAvailable,
-                    nfcEnabled = nfcEnabled,
-                    showConfirmDialog = showConfirmDialog,
-                    onIntegerChange = ::onIntegerChanged,
-                    onDecimalChange = ::onDecimalChanged,
-                    onSingleValueChange = ::onSingleValueChanged,
-                    onWriteClick = { commandType, payload ->
-                        preparePendingData(commandType, payload)
-                        showConfirmDialog = true
-                    },
-                    onConfirmWrite = { commandType, payload ->
-                        startWrite(commandType, payload)
-                    },
-                    onDismissConfirm = { showConfirmDialog = false },
-                )
+                var showSplash by rememberSaveable { mutableStateOf(true) }
+
+                if (showSplash) {
+                    BootSplashScreen(
+                        modifier = Modifier.fillMaxSize(),
+                        onFinished = { showSplash = false },
+                    )
+                } else {
+                    MeterSettingScreen(
+                        modifier = Modifier.fillMaxSize(),
+                        integerPart = integerPart,
+                        decimalPart = decimalPart,
+                        singleValue = singleValue,
+                        writeState = writeState,
+                        nfcAvailable = nfcAvailable,
+                        nfcEnabled = nfcEnabled,
+                        showConfirmDialog = showConfirmDialog,
+                        onIntegerChange = ::onIntegerChanged,
+                        onDecimalChange = ::onDecimalChanged,
+                        onSingleValueChange = ::onSingleValueChanged,
+                        onCommandTypeChange = ::onCommandTypeChanged,
+                        onWriteClick = { commandType, payload ->
+                            preparePendingData(commandType, payload)
+                            showConfirmDialog = true
+                        },
+                        onConfirmWrite = { commandType, payload ->
+                            startWrite(commandType, payload)
+                        },
+                        onDismissConfirm = { showConfirmDialog = false },
+                    )
+                }
             }
         }
     }
@@ -103,6 +115,15 @@ class MainActivity : ComponentActivity() {
 
     private fun onSingleValueChanged(value: String) {
         singleValue = value
+        resetResultStateIfNeeded()
+    }
+
+    private fun onCommandTypeChanged(@Suppress("UNUSED_PARAMETER") commandType: CommandType) {
+        // A105와 A107이 같은 입력 상태를 공유하므로, 메뉴 전환 시 이전 값을 비운다.
+        singleValue = ""
+        showConfirmDialog = false
+        pendingCommand = null
+        pendingDisplayValue = null
         resetResultStateIfNeeded()
     }
 

@@ -26,6 +26,17 @@ class MeterSettingViewModel : ViewModel() {
         _uiState.update { it.copy(singleValue = value) }
     }
 
+    fun onCommandTypeChange(@Suppress("UNUSED_PARAMETER") commandType: CommandType) {
+        _uiState.update {
+            it.copy(
+                singleValue = "",
+                showConfirmDialog = false,
+                pendingCommandType = null,
+                pendingPayload = "",
+            )
+        }
+    }
+
     fun onWriteClick(commandType: CommandType, payload: String) {
         _uiState.update {
             it.copy(
