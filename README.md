@@ -10,9 +10,9 @@
 - APK 파일 경로: 사용자디렉토리\AndroidStudioProjects\MyApplication\app\build\outputs\apk\debug\app-debug.apk
 
 
-## Loging
+## Login & icon
 <br>
-메인 화면 접속전 로그인 기능추가
+메인 화면 접속전 로그인 기능추가 및 어플 아이콘 변경
 
 ### LogingScreen(kt)
 ```kt
