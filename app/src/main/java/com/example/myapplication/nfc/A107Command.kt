@@ -3,7 +3,10 @@ package com.example.myapplication.nfc
 object A107Command {
     const val PREFIX = "A107"
 
-    fun formatDisplay(value: String): String = formatByte(value)
+    fun formatDisplay(value: String): String {
+        val intValue = value.toIntOrNull() ?: value.toIntOrNull(16) ?: return value
+        return "${intValue}시간"
+    }
 
     fun formatPayload(value: String): String = "$PREFIX${formatByte(value)}"
 

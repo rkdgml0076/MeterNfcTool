@@ -1,3 +1,270 @@
+### 2026-09-09 GitHub Commit
+#### 본 어플리케이션을 개발하기 위한 기본 작업 환경과 코드 프레임
+## 작업 환경 설정
+- 개발 환경(Code Editer) Android Studio 사용 <br>
+- MyApplication 기본 양식대로 Project 생성
+- Github 와 연동 및 git 활용을 위하여 git Download
+  Android Studio는 기본적으로 Git과 GitHub가 Plugins 되어있음
+- 코드 결과물 확인은 Clean and Assemble Project with Tests로 매번 빌드하여 확인중
+별도의 동작 결과 방법을 찾을 시 추후 기술
+- APK 파일 경로: 사용자디렉토리\AndroidStudioProjects\MyApplication\app\build\outputs\apk\debug\app-debug.apk
+
+
+## Loging
+<br>
+메인 화면 접속전 로그인 기능추가
+
+### LogingScreen(kt)
+```kt
+package com.example.myapplication
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+@Composable
+fun LoginScreen(
+    onLoginSuccess: () -> Unit,
+) {
+    var id by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var loginError by remember { mutableStateOf(false) }
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = "NFC Meter Tool",
+                fontSize = 32.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            Text(
+                text = "서비스 이용을 위해 로그인해주세요.",
+                fontSize = 14.sp,
+                color = Color.Gray
+            )
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            OutlinedTextField(
+                value = id,
+                onValueChange = {
+                    id = it
+                    loginError = false
+                },
+                label = { Text("아이디") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            OutlinedTextField(
+                value = password,
+                onValueChange = {
+                    password = it
+                    loginError = false
+                },
+                label = { Text("비밀번호") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Button(
+                onClick = {
+                    if ((id == "admin" && password == "admin") || (id == "ntmore" && password == "ntmore09")) {
+                        onLoginSuccess()
+                    } else {
+                        loginError = true
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium
+            ) {
+                Text("로그인", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
+
+            if (loginError) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "아이디 또는 비밀번호가 틀렸습니다.",
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 13.sp
+                )
+            }
+        }
+    }
+}
+```
+
+### A101Command(kt)
+```kt
+package com.example.myapplication.nfc
+
+object A101Command {
+    const val PREFIX = "A101"
+    fun formatDisplay(): String = "NFC 모드 진입"
+    fun formatPayload(): String = PREFIX
+    fun isValid(): Boolean = true
+}
+```
+
+### A102Command(kt)
+```kt
+package com.example.myapplication.nfc
+
+object A102Command {
+    const val PREFIX = "A102"
+    fun formatDisplay(): String = "NFC 모드 종료"
+    fun formatPayload(): String = PREFIX
+    fun isValid(): Boolean = true
+}
+```
+
+### A107Command(kt)
+```kt
+package com.example.myapplication.nfc
+
+object A107Command {
+    const val PREFIX = "A107"
+
+    fun formatDisplay(value: String): String {
+        val intValue = value.toIntOrNull() ?: value.toIntOrNull(16) ?: return value
+        return "${intValue}시간"
+    }
+
+    fun formatPayload(value: String): String = "$PREFIX${formatByte(value)}"
+
+    fun isValid(value: String): Boolean {
+        if (value.isEmpty()) return false
+        if (value.length > 2) return false
+        return value.all { it.isHexDigit() }
+    }
+
+    // 1byte = ASCII 2글자 (예: "6" -> "06", "0A" -> "0A")
+    private fun formatByte(value: String): String {
+        return value.uppercase().padStart(2, '0').takeLast(2)
+    }
+
+    private fun Char.isHexDigit(): Boolean {
+        return this in '0'..'9' || this in 'a'..'f' || this in 'A'..'F'
+    }
+}
+```
+
+### A109Command(kt)
+```kt
+package com.example.myapplication.nfc
+
+object A109Command {
+    const val PREFIX = "A109"
+    fun formatDisplay(): String = "단말기 재부팅"
+    fun formatPayload(): String = PREFIX
+    fun isValid(): Boolean = true
+}
+```
+
+### BootSplashScreen(kt)
+```kt
+enum class CommandType(val title: String, val prefix: String) {
+    NFC_START("NFC 모드 진입 (A101)", "A101"),
+    NFC_EXIT("NFC 모드 종료 (A102)", "A102"),
+    METER_NUMBER("계량기 번호 설정 (A103)", "A103"),
+    METER_VALUE("검침 값 설정 (A105)", "A105"),
+    REPORT_CYCLE("검침 주기 설정 (A107)", "A107"),
+    DEV_RESET("단말기 재부팅 (A109)", "A109"),
+}
+
+ var selectedType by remember { mutableStateOf(CommandType.NFC_START) }
+
+  CommandType.REPORT_CYCLE -> {
+    Text(
+        text = "전송 주기 입력 (1byte)",
+        style = MaterialTheme.typography.titleMedium,
+    )
+    OutlinedTextField(
+        modifier = Modifier.fillMaxWidth(),
+        value = singleValue,
+        onValueChange = { value ->
+            val next = value.uppercase()
+            if (next.length <= 2 && next.all { it.isDigit() || it in 'A'..'F' }) {
+                onSingleValueChange(next)
+            }
+        },
+        enabled = inputEnabled,
+        label = { Text("전송 주기 설정값 (예: 06 = 6시간 주기보고)") },
+        placeholder = { Text("06") },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+    )
+}
+CommandType.NFC_START,
+CommandType.DEV_RESET,
+```
+
+
+<br>
+
+### 진행 내용
+**icon 변경 및 로그인 페이지 추가**
+1. 로그인 페이지 추가
+ - ID/PW는 DB 없이 하드 코딩하여 계정 생성
+--Image 참고-- <br>
+<img width="648" height="1404" alt="Image" src="https://github.com/user-attachments/assets/30216187-48cc-46ad-98da-cc4467bbe575" /><br>
+
+2. 엔티모아 어플리케이션 아이콘 변경
+ - 아이콘 어셉션으로 아이콘 이미지 지정 후 전체 적용
+--Image 참고-- <br>
+<img width="1254" height="1254" alt="Image" src="https://github.com/user-attachments/assets/c111b7ca-281c-47ef-8b1a-ebd20e37a92f" /><br>
+
+3. 검침주기 양식 일부 변경
+ - 검침주기 => 전송주기
+ - 06입력 시, 6시간으로 출력
+4. 미리보기 하단 텍스트에서 0xA1 관련 Hex 텍스트 삭제(A101, A102, A109 반영)
+5. A109: 단말 RESET 텍스트 => 단말기 재부팅 일괄 변경(미리보기 하단, 메뉴 선택)
+--Image 참고-- <br>
+<img width="648" height="1404" alt="Image" src="https://github.com/user-attachments/assets/ca760b31-7aac-4d57-b0a8-52028e92f2f4" /><br>
+
+6. 어플 접속 메인 이미지 글로벌성장사다리 슬로건 피드백 받아 삭제처리
+--Image 참고-- <br>
+<img width="768" height="1376" alt="Image" src="https://github.com/user-attachments/assets/1c4e9236-4e3e-459d-b7ae-2a6d48a12bf4" />
+<br>
+---
+
 ### 2026-09-08 GitHub Commit
 #### 본 어플리케이션을 개발하기 위한 기본 작업 환경과 코드 프레임
 ## 작업 환경 설정

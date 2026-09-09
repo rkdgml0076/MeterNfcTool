@@ -51,7 +51,7 @@ enum class CommandType(val title: String, val prefix: String) {
     METER_NUMBER("계량기 번호 설정 (A103)", "A103"),
     METER_VALUE("검침 값 설정 (A105)", "A105"),
     REPORT_CYCLE("검침 주기 설정 (A107)", "A107"),
-    DEV_RESET("단말 RESET (A109)", "A109"),
+    DEV_RESET("단말기 재부팅 (A109)", "A109"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -74,7 +74,7 @@ fun MeterSettingScreen(
     onDismissConfirm: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var selectedType by remember { mutableStateOf(CommandType.METER_NUMBER) }
+    var selectedType by remember { mutableStateOf(CommandType.NFC_START) }
     var expanded by remember { mutableStateOf(false) }
     val availableCommands = CommandType.entries
 
@@ -238,7 +238,7 @@ fun MeterSettingScreen(
                 }
                 CommandType.REPORT_CYCLE -> {
                     Text(
-                        text = "검침 주기 입력 (1byte)",
+                        text = "전송 주기 입력 (1byte)",
                         style = MaterialTheme.typography.titleMedium,
                     )
                     OutlinedTextField(
@@ -257,8 +257,8 @@ fun MeterSettingScreen(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
                     )
                 }
-                CommandType.DEV_RESET,
                 CommandType.NFC_START,
+                CommandType.DEV_RESET,
                 CommandType.NFC_EXIT -> { /* 입력 필드 없음 */ }
             }
 

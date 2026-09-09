@@ -40,6 +40,7 @@ class MainActivity : ComponentActivity() {
     private var nfcEnabled by mutableStateOf(false)
     private var showConfirmDialog by mutableStateOf(false)
 
+    private var isLoggedIn by mutableStateOf(false)
     private var pendingCommand: String? = null
     private var pendingDisplayValue: String? = null
 
@@ -55,7 +56,13 @@ class MainActivity : ComponentActivity() {
             MyApplicationTheme {
                 var showSplash by rememberSaveable { mutableStateOf(true) }
 
-                if (showSplash) {
+                if (!isLoggedIn) {
+                    LoginScreen(
+                        onLoginSuccess = {
+                            isLoggedIn = true
+                        },
+                    )
+                } else if (showSplash) {
                     BootSplashScreen(
                         modifier = Modifier.fillMaxSize(),
                         onFinished = { showSplash = false },
