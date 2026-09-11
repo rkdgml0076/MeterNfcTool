@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import androidx.activity.ComponentActivity
@@ -40,6 +41,7 @@ class MainActivity : ComponentActivity() {
 
     private var pendingCommand: String? = null
     private var pendingDisplayValue: String? = null
+    private var awaitDeadlineElapsedRealtime: Long = 0L
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val awaitTagTimeout = Runnable {
@@ -57,6 +59,7 @@ class MainActivity : ComponentActivity() {
         nfcAdapter = NfcAdapter.getDefaultAdapter(this)
         nfcAvailable = nfcAdapter != null
         nfcEnabled = nfcAdapter?.isEnabled == true
+        restoreWriteSession(savedInstanceState)
 
         enableEdgeToEdge()
         setContent {
@@ -161,6 +164,26 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(KEY_PENDING_COMMAND, pendingCommand)
+        outState.putString(KEY_PENDING_DISPLAY, pendingDisplayValue)
+        outState.putLong(KEY_AWAIT_DEADLINE, awaitDeadlineElapsedRealtime)
+        when (val state = writeState) {
+            NfcWriteState.Idle -> outState.putString(KEY_WRITE_STATE, STATE_IDLE)
+            NfcWriteState.AwaitingTag -> outState.putString(KEY_WRITE_STATE, STATE_AWAITING)
+            NfcWriteState.Writing -> outState.putString(KEY_WRITE_STATE, STATE_WRITING)
+            is NfcWriteState.Success -> {
+                outState.putString(KEY_WRITE_STATE, STATE_SUCCESS)
+                outState.putString(KEY_WRITE_DETAIL, state.displayValue)
+            }
+            is NfcWriteState.Error -> {
+                outState.putString(KEY_WRITE_STATE, STATE_ERROR)
+                outState.putString(KEY_WRITE_DETAIL, state.message)
+            }
+        }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
     }
@@ -199,18 +222,67 @@ class MainActivity : ComponentActivity() {
         preparePendingData(commandType, payload, integerPart, decimalPart, singleValue)
         writeState = NfcWriteState.AwaitingTag
         syncNfcReaderMode()
-        mainHandler.removeCallbacks(awaitTagTimeout)
-        mainHandler.postDelayed(awaitTagTimeout, AWAIT_TAG_TIMEOUT_MS)
+        armAwaitTagTimeout(AWAIT_TAG_TIMEOUT_MS)
     }
 
     private fun cancelWrite() {
-        mainHandler.removeCallbacks(awaitTagTimeout)
+        clearAwaitTagTimeout()
         pendingCommand = null
         pendingDisplayValue = null
         if (writeState is NfcWriteState.AwaitingTag || writeState is NfcWriteState.Writing) {
             writeState = NfcWriteState.Idle
         }
         syncNfcReaderMode()
+    }
+
+    private fun restoreWriteSession(savedInstanceState: Bundle?) {
+        if (savedInstanceState == null) return
+
+        pendingCommand = savedInstanceState.getString(KEY_PENDING_COMMAND)
+        pendingDisplayValue = savedInstanceState.getString(KEY_PENDING_DISPLAY)
+        awaitDeadlineElapsedRealtime = savedInstanceState.getLong(KEY_AWAIT_DEADLINE, 0L)
+
+        writeState = when (savedInstanceState.getString(KEY_WRITE_STATE)) {
+            STATE_AWAITING, STATE_WRITING -> {
+                if (pendingCommand.isNullOrEmpty()) {
+                    NfcWriteState.Idle
+                } else {
+                    NfcWriteState.AwaitingTag
+                }
+            }
+            STATE_SUCCESS -> NfcWriteState.Success(
+                displayValue = savedInstanceState.getString(KEY_WRITE_DETAIL).orEmpty(),
+            )
+            STATE_ERROR -> NfcWriteState.Error(
+                message = savedInstanceState.getString(KEY_WRITE_DETAIL)
+                    ?: "NFC Write에 실패했습니다.",
+            )
+            else -> NfcWriteState.Idle
+        }
+
+        if (writeState is NfcWriteState.AwaitingTag) {
+            resumeAwaitTagTimeout()
+        }
+    }
+
+    private fun armAwaitTagTimeout(timeoutMs: Long) {
+        awaitDeadlineElapsedRealtime = SystemClock.elapsedRealtime() + timeoutMs
+        resumeAwaitTagTimeout()
+    }
+
+    private fun resumeAwaitTagTimeout() {
+        mainHandler.removeCallbacks(awaitTagTimeout)
+        val remainingMs = awaitDeadlineElapsedRealtime - SystemClock.elapsedRealtime()
+        if (remainingMs <= 0L) {
+            awaitTagTimeout.run()
+        } else {
+            mainHandler.postDelayed(awaitTagTimeout, remainingMs)
+        }
+    }
+
+    private fun clearAwaitTagTimeout() {
+        mainHandler.removeCallbacks(awaitTagTimeout)
+        awaitDeadlineElapsedRealtime = 0L
     }
 
     private fun syncNfcReaderMode() {
@@ -237,7 +309,7 @@ class MainActivity : ComponentActivity() {
         val command = pendingCommand ?: return
 
         runOnUiThread {
-            mainHandler.removeCallbacks(awaitTagTimeout)
+            clearAwaitTagTimeout()
             writeState = NfcWriteState.Writing
         }
 
@@ -245,7 +317,7 @@ class MainActivity : ComponentActivity() {
         val displayValue = pendingDisplayValue.orEmpty()
 
         runOnUiThread {
-            mainHandler.removeCallbacks(awaitTagTimeout)
+            clearAwaitTagTimeout()
             pendingCommand = null
             pendingDisplayValue = null
 
@@ -278,5 +350,15 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val AWAIT_TAG_TIMEOUT_MS = 15_000L
+        private const val KEY_PENDING_COMMAND = "pending_command"
+        private const val KEY_PENDING_DISPLAY = "pending_display"
+        private const val KEY_WRITE_STATE = "write_state"
+        private const val KEY_WRITE_DETAIL = "write_detail"
+        private const val KEY_AWAIT_DEADLINE = "await_deadline"
+        private const val STATE_IDLE = "idle"
+        private const val STATE_AWAITING = "awaiting"
+        private const val STATE_WRITING = "writing"
+        private const val STATE_SUCCESS = "success"
+        private const val STATE_ERROR = "error"
     }
 }

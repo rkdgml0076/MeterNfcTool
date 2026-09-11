@@ -1,3 +1,147 @@
+### 2026-09-11 GitHub Commit
+#### 본 어플리케이션을 개발하기 위한 기본 작업 환경과 코드 프레임
+## 작업 환경 설정
+- 개발 환경(Code Editer) Android Studio 사용 <br>
+- MyApplication 기본 양식대로 Project 생성
+- Github 와 연동 및 git 활용을 위하여 git Download
+  Android Studio는 기본적으로 Git과 GitHub가 Plugins 되어있음
+- 코드 결과물 확인은 Clean and Assemble Project with Tests로 매번 빌드하여 확인중
+별도의 동작 결과 방법을 찾을 시 추후 기술
+- APK 파일 경로: 사용자디렉토리\AndroidStudioProjects\MyApplication\app\build\outputs\apk\debug\app-debug.apk
+
+
+## Splash / Login / NFC 대기 흐름 수정
+<br>
+부팅 화면 이후 로그인 화면을 거치도록 순서를 고정하고, 화면 회전과 NFC 태그 대기 UX를 보완
+
+### LoginScreen(kotlin)
+```kotlin
+            Text(
+                text = "NTmore NFC",
+                fontSize = 32.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.primary
+            )
+```
+
+### MainActivity(kotlin)
+```kotlin
+        restoreWriteSession(savedInstanceState)
+
+        enableEdgeToEdge()
+        setContent {
+            MyApplicationTheme {
+                var showSplash by rememberSaveable { mutableStateOf(true) }
+                var isLoggedIn by rememberSaveable { mutableStateOf(false) }
+                var integerPart by rememberSaveable { mutableStateOf("") }
+                var decimalPart by rememberSaveable { mutableStateOf("") }
+                var singleValue by rememberSaveable { mutableStateOf("") }
+                var showConfirmDialog by rememberSaveable { mutableStateOf(false) }
+
+                when {
+                    showSplash -> {
+                        BootSplashScreen(
+                            modifier = Modifier.fillMaxSize(),
+                            onFinished = { showSplash = false },
+                        )
+                    }
+                    !isLoggedIn -> {
+                        LoginScreen(
+                            onLoginSuccess = { isLoggedIn = true },
+                        )
+                    }
+                    else -> {
+                        MeterSettingScreen(
+                            ...
+                            onDismissConfirm = {
+                                showConfirmDialog = false
+                                if (writeState !is NfcWriteState.AwaitingTag &&
+                                    writeState !is NfcWriteState.Writing
+                                ) {
+                                    pendingCommand = null
+                                    pendingDisplayValue = null
+                                }
+                            },
+                            onCancelWrite = ::cancelWrite,
+                        )
+                    }
+                }
+            }
+        }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(KEY_PENDING_COMMAND, pendingCommand)
+        outState.putString(KEY_PENDING_DISPLAY, pendingDisplayValue)
+        outState.putLong(KEY_AWAIT_DEADLINE, awaitDeadlineElapsedRealtime)
+        ...
+    }
+
+    private fun startWrite(...) {
+        preparePendingData(commandType, payload, integerPart, decimalPart, singleValue)
+        writeState = NfcWriteState.AwaitingTag
+        syncNfcReaderMode()
+        armAwaitTagTimeout(AWAIT_TAG_TIMEOUT_MS)
+    }
+
+    companion object {
+        private const val AWAIT_TAG_TIMEOUT_MS = 15_000L
+        ...
+    }
+```
+
+### MeterSettingScreen(kotlin)
+```kotlin
+    onCancelWrite: () -> Unit = {},
+
+    var selectedTypeName by rememberSaveable { mutableStateOf(CommandType.NFC_START.name) }
+    val selectedType = CommandType.valueOf(selectedTypeName)
+
+            if (writeState is NfcWriteState.AwaitingTag) {
+                TextButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onCancelWrite,
+                ) {
+                    Text("태그 대기 취소")
+                }
+            }
+
+        NfcWriteState.AwaitingTag -> Triple(
+            "계량기에 폰을 대주세요. 15초 동안 대기합니다.",
+            MaterialTheme.colorScheme.primaryContainer,
+            MaterialTheme.colorScheme.onPrimaryContainer,
+        )
+```
+
+### gradle.properties
+```properties
+kotlin.code.style=official
+android.useAndroidX=true
+android.enableJetifier=true
+```
+
+<br>
+
+### 진행 내용
+**스플래시-로그인 순서 고정 및 NFC 태그 대기 UX 보완**
+1. 부팅 스플래시 종료 후 로그인 화면을 거치도록 화면 흐름 수정
+ - 기존에는 스플래시 이후 바로 설정 화면으로 진입하던 경로를 스플래시 → 로그인 → 메인 순서로 고정
+2. 화면 회전 시 UI 상태 유지
+ - 로그인 여부, 입력값, 확인 다이얼로그를 `rememberSaveable`로 유지
+ - NFC Write 대기/결과 세션은 `onSaveInstanceState`로 복원
+3. NFC 태그 대기 취소 기능 추가
+ - 태그 대기 중 `태그 대기 취소` 버튼으로 Write 대기를 중단할 수 있음
+4. 태그 대기 시간 15초로 연장
+ - 안내 문구도 `15초 동안 대기합니다`로 변경
+5. 확인 다이얼로그를 닫아도 대기 중인 Write는 유지
+ - 이미 태그 대기/전송 중이면 pending 명령을 지우지 않음
+6. 로그인 화면 타이틀 변경
+ - `NFC Meter Tool` → `NTmore NFC`
+7. Gradle 설정 보강
+ - `android.useAndroidX=true`, `android.enableJetifier=true` 추가
+<br>
+---
+
 ### 2026-09-09 GitHub Commit
 #### 본 어플리케이션을 개발하기 위한 기본 작업 환경과 코드 프레임
 ## 작업 환경 설정
@@ -14,8 +158,8 @@
 <br>
 메인 화면 접속전 로그인 기능추가 및 어플 아이콘 변경
 
-### LogingScreen(kt)
-```kt
+### LogingScreen(kotlin)
+```kotlin
 package com.example.myapplication
 
 import androidx.compose.foundation.layout.Arrangement
@@ -131,8 +275,8 @@ fun LoginScreen(
 }
 ```
 
-### A101Command(kt)
-```kt
+### A101Command(kotlin)
+```kotlin
 package com.example.myapplication.nfc
 
 object A101Command {
@@ -143,8 +287,8 @@ object A101Command {
 }
 ```
 
-### A102Command(kt)
-```kt
+### A102Command(kotlin)
+```kotlin
 package com.example.myapplication.nfc
 
 object A102Command {
@@ -155,8 +299,8 @@ object A102Command {
 }
 ```
 
-### A107Command(kt)
-```kt
+### A107Command(kotlin)
+```kotlin
 package com.example.myapplication.nfc
 
 object A107Command {
@@ -186,8 +330,8 @@ object A107Command {
 }
 ```
 
-### A109Command(kt)
-```kt
+### A109Command(kotlin)
+```kotlin
 package com.example.myapplication.nfc
 
 object A109Command {
@@ -198,8 +342,8 @@ object A109Command {
 }
 ```
 
-### BootSplashScreen(kt)
-```kt
+### BootSplashScreen(kotlin)
+```kotlin
 enum class CommandType(val title: String, val prefix: String) {
     NFC_START("NFC 모드 진입 (A101)", "A101"),
     NFC_EXIT("NFC 모드 종료 (A102)", "A102"),
@@ -235,7 +379,6 @@ enum class CommandType(val title: String, val prefix: String) {
 CommandType.NFC_START,
 CommandType.DEV_RESET,
 ```
-
 
 <br>
 
@@ -281,8 +424,8 @@ CommandType.DEV_RESET,
 <br>
 A105, A107 메뉴 변경 시에도 입력 값 유지되던 버그 FIX
 
-### MeterSettingScreen(kt)
-```kt
+### MeterSettingScreen(kotlin)
+```kotlin
 onCommandTypeChange: (CommandType) -> Unit = {},
 
 if (type != selectedType) {
@@ -290,8 +433,8 @@ if (type != selectedType) {
 }
 ```
 
-### MeterSettingViewModel(kt)
-```kt
+### MeterSettingViewModel(kotlin)
+```kotlin
 fun onCommandTypeChange(@Suppress("UNUSED_PARAMETER") commandType: CommandType) {
     _uiState.update {
         it.copy(
@@ -304,8 +447,8 @@ fun onCommandTypeChange(@Suppress("UNUSED_PARAMETER") commandType: CommandType) 
 }
 ```
 
-### MainActivity(kt)
-```kt
+### MainActivity(kotlin)
+```kotlin
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.example.myapplication.ui.BootSplashScreen
 
@@ -351,8 +494,8 @@ private fun onCommandTypeChanged(@Suppress("UNUSED_PARAMETER") commandType: Comm
 }
 ```
 
-### BootSplashScreen(kt)
-```kt
+### BootSplashScreen(kotlin)
+```kotlin
 package com.example.myapplication.ui
 
 import androidx.compose.animation.core.animateFloatAsState
@@ -453,8 +596,8 @@ fun BootSplashScreen(
 <br>
 
 A107, A109 Write 기능 구현
-### A107Command(kt)
-```kt
+### A107Command(kotlin)
+```kotlin
 package com.example.myapplication.nfc
 
 object A107Command {
@@ -481,8 +624,8 @@ object A107Command {
 }
 ```
 
-### A107Command(kt)
-```kt
+### A107Command(kotlin)
+```kotlin
 package com.example.myapplication.nfc
 
 object A109Command {
@@ -496,8 +639,8 @@ object A109Command {
 }
 ```
 
-### MainActivity(kt)
-```kt
+### MainActivity(kotlin)
+```kotlin
 package com.example.myapplication
 
 import android.content.Intent
@@ -684,8 +827,8 @@ class MainActivity : ComponentActivity() {
 }
 ```
 
-### MeterSettingScreen(kt)
-```kt
+### MeterSettingScreen(kotlin)
+```kotlin
 package com.example.myapplication.ui
 
 import androidx.compose.foundation.layout.Arrangement
@@ -1104,8 +1247,8 @@ fun MeterSettingScreenPreview() {
 }
 ```
 
-### NfcWriteState(kt)
-```kt
+### NfcWriteState(kotlin)
+```kotlin
 package com.example.myapplication.nfc
 
 sealed interface NfcWriteState {
@@ -1147,8 +1290,8 @@ sealed interface NfcWriteState {
 <br>
 
 A101, A102, A103, A105 Write 기능 초기 구현
-### A101Command(kt)
-```kt
+### A101Command(kotlin)
+```kotlin
 package com.example.myapplication.nfc
 
 object A101Command {
@@ -1159,8 +1302,8 @@ object A101Command {
 }
 ```
 
-### A102Command(kt)
-```kt
+### A102Command(kotlin)
+```kotlin
 package com.example.myapplication.nfc
 
 object A102Command {
@@ -1171,8 +1314,8 @@ object A102Command {
 }
 ```
 
-### A103Command(kt)
-```kt
+### A103Command(kotlin)
+```kotlin
 package com.example.myapplication.nfc
 
 object A103Command {
@@ -1200,8 +1343,8 @@ object A103Command {
 
 ```
 
-### A105Command(kt)
-```kt
+### A105Command(kotlin)
+```kotlin
 package com.example.myapplication.nfc
 
 object A105Command {
@@ -1226,8 +1369,8 @@ object A105Command {
 }
 ```
 
-### NfcWriteState(kt)
-```kt
+### NfcWriteState(kotlin)
+```kotlin
 package com.example.myapplication.nfc
 
 sealed interface NfcWriteState {
@@ -1246,8 +1389,8 @@ sealed interface NfcWriteState {
 }
 ```
 
-### NfcWrite(kt)
-```kt
+### NfcWrite(kotlin)
+```kotlin
 package com.example.myapplication.nfc
 
 import android.nfc.NdefMessage
@@ -1308,8 +1451,8 @@ object NfcWriter {
 }
 ```
 
-### MainActivity(kt)
-```kt
+### MainActivity(kotlin)
+```kotlin
 package com.example.myapplication
 
 import android.content.Intent
@@ -1495,8 +1638,8 @@ class MainActivity : ComponentActivity() {
 }
 ```
 
-### MeterSettingScreen(kt)
-```kt
+### MeterSettingScreen(kotlin)
+```kotlin
 package com.example.myapplication.ui
 
 import androidx.compose.foundation.layout.Arrangement
