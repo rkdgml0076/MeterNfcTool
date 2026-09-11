@@ -373,7 +373,7 @@ private fun WriteStatusCard(writeState: NfcWriteState) {
             MaterialTheme.colorScheme.onSurfaceVariant,
         )
         NfcWriteState.AwaitingTag -> Triple(
-            "단말기에 NFC Write 해주세요. 15초 동안 대기합니다.",
+            "단말기에 모바일을 인접해주세요. 15초 동안 대기합니다.",
             MaterialTheme.colorScheme.primaryContainer,
             MaterialTheme.colorScheme.onPrimaryContainer,
         )

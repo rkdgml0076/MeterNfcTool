@@ -107,7 +107,7 @@
             }
 
         NfcWriteState.AwaitingTag -> Triple(
-            "계량기에 폰을 대주세요. 15초 동안 대기합니다.",
+            "단말기에 모바일을 인접해주세요. 15초 동안 대기합니다.",
             MaterialTheme.colorScheme.primaryContainer,
             MaterialTheme.colorScheme.onPrimaryContainer,
         )
@@ -132,7 +132,7 @@ android.enableJetifier=true
 3. NFC 태그 대기 취소 기능 추가
  - 태그 대기 중 `태그 대기 취소` 버튼으로 Write 대기를 중단할 수 있음
 4. 태그 대기 시간 15초로 연장
- - 안내 문구도 `단말기에 NFC Write 해주세요. 15초 동안 대기합니다.`로 변경
+ - 안내 문구도 `단말기에 모바일을 인접해주세요. 15초 동안 대기합니다.`로 변경
 5. 확인 다이얼로그를 닫아도 대기 중인 Write는 유지
  - 이미 태그 대기/전송 중이면 pending 명령을 지우지 않음
 6. 로그인 화면 타이틀 변경
