@@ -373,7 +373,7 @@ private fun WriteStatusCard(writeState: NfcWriteState) {
             MaterialTheme.colorScheme.onSurfaceVariant,
         )
         NfcWriteState.AwaitingTag -> Triple(
-            "계량기에 폰을 대주세요. 취소하려면 아래 버튼을 누르세요.",
+            "계량기에 폰을 대주세요. 15초 동안 대기합니다.",
             MaterialTheme.colorScheme.primaryContainer,
             MaterialTheme.colorScheme.onPrimaryContainer,
         )

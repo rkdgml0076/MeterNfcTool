@@ -5,6 +5,8 @@ import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import androidx.activity.ComponentActivity
@@ -38,6 +40,16 @@ class MainActivity : ComponentActivity() {
 
     private var pendingCommand: String? = null
     private var pendingDisplayValue: String? = null
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val awaitTagTimeout = Runnable {
+        if (writeState is NfcWriteState.AwaitingTag) {
+            pendingCommand = null
+            pendingDisplayValue = null
+            writeState = NfcWriteState.Error("태그 대기 시간이 초과되었습니다. 다시 NFC Write를 눌러주세요.")
+            syncNfcReaderMode()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -118,8 +130,12 @@ class MainActivity : ComponentActivity() {
                             },
                             onDismissConfirm = {
                                 showConfirmDialog = false
-                                pendingCommand = null
-                                pendingDisplayValue = null
+                                if (writeState !is NfcWriteState.AwaitingTag &&
+                                    writeState !is NfcWriteState.Writing
+                                ) {
+                                    pendingCommand = null
+                                    pendingDisplayValue = null
+                                }
                             },
                             onCancelWrite = ::cancelWrite,
                         )
@@ -138,6 +154,11 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         nfcAdapter?.disableReaderMode(this)
+    }
+
+    override fun onDestroy() {
+        mainHandler.removeCallbacks(awaitTagTimeout)
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -178,9 +199,12 @@ class MainActivity : ComponentActivity() {
         preparePendingData(commandType, payload, integerPart, decimalPart, singleValue)
         writeState = NfcWriteState.AwaitingTag
         syncNfcReaderMode()
+        mainHandler.removeCallbacks(awaitTagTimeout)
+        mainHandler.postDelayed(awaitTagTimeout, AWAIT_TAG_TIMEOUT_MS)
     }
 
     private fun cancelWrite() {
+        mainHandler.removeCallbacks(awaitTagTimeout)
         pendingCommand = null
         pendingDisplayValue = null
         if (writeState is NfcWriteState.AwaitingTag || writeState is NfcWriteState.Writing) {
@@ -213,6 +237,7 @@ class MainActivity : ComponentActivity() {
         val command = pendingCommand ?: return
 
         runOnUiThread {
+            mainHandler.removeCallbacks(awaitTagTimeout)
             writeState = NfcWriteState.Writing
         }
 
@@ -220,6 +245,7 @@ class MainActivity : ComponentActivity() {
         val displayValue = pendingDisplayValue.orEmpty()
 
         runOnUiThread {
+            mainHandler.removeCallbacks(awaitTagTimeout)
             pendingCommand = null
             pendingDisplayValue = null
 
@@ -248,5 +274,9 @@ class MainActivity : ComponentActivity() {
             @Suppress("DEPRECATION")
             vibrator.vibrate(200)
         }
+    }
+
+    companion object {
+        private const val AWAIT_TAG_TIMEOUT_MS = 15_000L
     }
 }
