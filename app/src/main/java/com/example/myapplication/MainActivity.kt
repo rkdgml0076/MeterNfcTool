@@ -5,6 +5,9 @@ import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import androidx.activity.ComponentActivity
@@ -32,17 +35,23 @@ import com.example.myapplication.ui.theme.MyApplicationTheme
 class MainActivity : ComponentActivity() {
     private var nfcAdapter: NfcAdapter? = null
 
-    private var integerPart by mutableStateOf("")
-    private var decimalPart by mutableStateOf("")
-    private var singleValue by mutableStateOf("")
     private var writeState by mutableStateOf<NfcWriteState>(NfcWriteState.Idle)
     private var nfcAvailable by mutableStateOf(false)
     private var nfcEnabled by mutableStateOf(false)
-    private var showConfirmDialog by mutableStateOf(false)
 
-    private var isLoggedIn by mutableStateOf(false)
     private var pendingCommand: String? = null
     private var pendingDisplayValue: String? = null
+    private var awaitDeadlineElapsedRealtime: Long = 0L
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val awaitTagTimeout = Runnable {
+        if (writeState is NfcWriteState.AwaitingTag) {
+            pendingCommand = null
+            pendingDisplayValue = null
+            writeState = NfcWriteState.Error("태그 대기 시간이 초과되었습니다. 다시 NFC Write를 눌러주세요.")
+            syncNfcReaderMode()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,46 +59,90 @@ class MainActivity : ComponentActivity() {
         nfcAdapter = NfcAdapter.getDefaultAdapter(this)
         nfcAvailable = nfcAdapter != null
         nfcEnabled = nfcAdapter?.isEnabled == true
+        restoreWriteSession(savedInstanceState)
 
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
                 var showSplash by rememberSaveable { mutableStateOf(true) }
+                var isLoggedIn by rememberSaveable { mutableStateOf(false) }
+                var integerPart by rememberSaveable { mutableStateOf("") }
+                var decimalPart by rememberSaveable { mutableStateOf("") }
+                var singleValue by rememberSaveable { mutableStateOf("") }
+                var showConfirmDialog by rememberSaveable { mutableStateOf(false) }
 
-                if (!isLoggedIn) {
-                    LoginScreen(
-                        onLoginSuccess = {
-                            isLoggedIn = true
-                        },
-                    )
-                } else if (showSplash) {
-                    BootSplashScreen(
-                        modifier = Modifier.fillMaxSize(),
-                        onFinished = { showSplash = false },
-                    )
-                } else {
-                    MeterSettingScreen(
-                        modifier = Modifier.fillMaxSize(),
-                        integerPart = integerPart,
-                        decimalPart = decimalPart,
-                        singleValue = singleValue,
-                        writeState = writeState,
-                        nfcAvailable = nfcAvailable,
-                        nfcEnabled = nfcEnabled,
-                        showConfirmDialog = showConfirmDialog,
-                        onIntegerChange = ::onIntegerChanged,
-                        onDecimalChange = ::onDecimalChanged,
-                        onSingleValueChange = ::onSingleValueChanged,
-                        onCommandTypeChange = ::onCommandTypeChanged,
-                        onWriteClick = { commandType, payload ->
-                            preparePendingData(commandType, payload)
-                            showConfirmDialog = true
-                        },
-                        onConfirmWrite = { commandType, payload ->
-                            startWrite(commandType, payload)
-                        },
-                        onDismissConfirm = { showConfirmDialog = false },
-                    )
+                when {
+                    showSplash -> {
+                        BootSplashScreen(
+                            modifier = Modifier.fillMaxSize(),
+                            onFinished = { showSplash = false },
+                        )
+                    }
+                    !isLoggedIn -> {
+                        LoginScreen(
+                            onLoginSuccess = { isLoggedIn = true },
+                        )
+                    }
+                    else -> {
+                        MeterSettingScreen(
+                            modifier = Modifier.fillMaxSize(),
+                            integerPart = integerPart,
+                            decimalPart = decimalPart,
+                            singleValue = singleValue,
+                            writeState = writeState,
+                            nfcAvailable = nfcAvailable,
+                            nfcEnabled = nfcEnabled,
+                            showConfirmDialog = showConfirmDialog,
+                            onIntegerChange = { value ->
+                                integerPart = value
+                                resetResultStateIfNeeded()
+                            },
+                            onDecimalChange = { value ->
+                                decimalPart = value
+                                resetResultStateIfNeeded()
+                            },
+                            onSingleValueChange = { value ->
+                                singleValue = value
+                                resetResultStateIfNeeded()
+                            },
+                            onCommandTypeChange = {
+                                singleValue = ""
+                                showConfirmDialog = false
+                                cancelWrite()
+                                resetResultStateIfNeeded()
+                            },
+                            onWriteClick = { commandType, payload ->
+                                preparePendingData(
+                                    commandType,
+                                    payload,
+                                    integerPart,
+                                    decimalPart,
+                                    singleValue,
+                                )
+                                showConfirmDialog = true
+                            },
+                            onConfirmWrite = { commandType, payload ->
+                                showConfirmDialog = false
+                                startWrite(
+                                    commandType,
+                                    payload,
+                                    integerPart,
+                                    decimalPart,
+                                    singleValue,
+                                )
+                            },
+                            onDismissConfirm = {
+                                showConfirmDialog = false
+                                if (writeState !is NfcWriteState.AwaitingTag &&
+                                    writeState !is NfcWriteState.Writing
+                                ) {
+                                    pendingCommand = null
+                                    pendingDisplayValue = null
+                                }
+                            },
+                            onCancelWrite = ::cancelWrite,
+                        )
+                    }
                 }
             }
         }
@@ -98,7 +151,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         nfcEnabled = nfcAdapter?.isEnabled == true
-        enableNfcReaderMode()
+        syncNfcReaderMode()
     }
 
     override fun onPause() {
@@ -106,32 +159,33 @@ class MainActivity : ComponentActivity() {
         nfcAdapter?.disableReaderMode(this)
     }
 
+    override fun onDestroy() {
+        mainHandler.removeCallbacks(awaitTagTimeout)
+        super.onDestroy()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(KEY_PENDING_COMMAND, pendingCommand)
+        outState.putString(KEY_PENDING_DISPLAY, pendingDisplayValue)
+        outState.putLong(KEY_AWAIT_DEADLINE, awaitDeadlineElapsedRealtime)
+        when (val state = writeState) {
+            NfcWriteState.Idle -> outState.putString(KEY_WRITE_STATE, STATE_IDLE)
+            NfcWriteState.AwaitingTag -> outState.putString(KEY_WRITE_STATE, STATE_AWAITING)
+            NfcWriteState.Writing -> outState.putString(KEY_WRITE_STATE, STATE_WRITING)
+            is NfcWriteState.Success -> {
+                outState.putString(KEY_WRITE_STATE, STATE_SUCCESS)
+                outState.putString(KEY_WRITE_DETAIL, state.displayValue)
+            }
+            is NfcWriteState.Error -> {
+                outState.putString(KEY_WRITE_STATE, STATE_ERROR)
+                outState.putString(KEY_WRITE_DETAIL, state.message)
+            }
+        }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-    }
-
-    private fun onIntegerChanged(value: String) {
-        integerPart = value
-        resetResultStateIfNeeded()
-    }
-
-    private fun onDecimalChanged(value: String) {
-        decimalPart = value
-        resetResultStateIfNeeded()
-    }
-
-    private fun onSingleValueChanged(value: String) {
-        singleValue = value
-        resetResultStateIfNeeded()
-    }
-
-    private fun onCommandTypeChanged(@Suppress("UNUSED_PARAMETER") commandType: CommandType) {
-        // A105와 A107이 같은 입력 상태를 공유하므로, 메뉴 전환 시 이전 값을 비운다.
-        singleValue = ""
-        showConfirmDialog = false
-        pendingCommand = null
-        pendingDisplayValue = null
-        resetResultStateIfNeeded()
     }
 
     private fun resetResultStateIfNeeded() {
@@ -140,7 +194,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun preparePendingData(commandType: CommandType, payload: String) {
+    private fun preparePendingData(
+        commandType: CommandType,
+        payload: String,
+        integerPart: String,
+        decimalPart: String,
+        singleValue: String,
+    ) {
         pendingCommand = payload
         pendingDisplayValue = when (commandType) {
             CommandType.NFC_START -> A101Command.formatDisplay()
@@ -152,10 +212,85 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun startWrite(commandType: CommandType, payload: String) {
-        showConfirmDialog = false
-        preparePendingData(commandType, payload)
+    private fun startWrite(
+        commandType: CommandType,
+        payload: String,
+        integerPart: String,
+        decimalPart: String,
+        singleValue: String,
+    ) {
+        preparePendingData(commandType, payload, integerPart, decimalPart, singleValue)
         writeState = NfcWriteState.AwaitingTag
+        syncNfcReaderMode()
+        armAwaitTagTimeout(AWAIT_TAG_TIMEOUT_MS)
+    }
+
+    private fun cancelWrite() {
+        clearAwaitTagTimeout()
+        pendingCommand = null
+        pendingDisplayValue = null
+        if (writeState is NfcWriteState.AwaitingTag || writeState is NfcWriteState.Writing) {
+            writeState = NfcWriteState.Idle
+        }
+        syncNfcReaderMode()
+    }
+
+    private fun restoreWriteSession(savedInstanceState: Bundle?) {
+        if (savedInstanceState == null) return
+
+        pendingCommand = savedInstanceState.getString(KEY_PENDING_COMMAND)
+        pendingDisplayValue = savedInstanceState.getString(KEY_PENDING_DISPLAY)
+        awaitDeadlineElapsedRealtime = savedInstanceState.getLong(KEY_AWAIT_DEADLINE, 0L)
+
+        writeState = when (savedInstanceState.getString(KEY_WRITE_STATE)) {
+            STATE_AWAITING, STATE_WRITING -> {
+                if (pendingCommand.isNullOrEmpty()) {
+                    NfcWriteState.Idle
+                } else {
+                    NfcWriteState.AwaitingTag
+                }
+            }
+            STATE_SUCCESS -> NfcWriteState.Success(
+                displayValue = savedInstanceState.getString(KEY_WRITE_DETAIL).orEmpty(),
+            )
+            STATE_ERROR -> NfcWriteState.Error(
+                message = savedInstanceState.getString(KEY_WRITE_DETAIL)
+                    ?: "NFC Write에 실패했습니다.",
+            )
+            else -> NfcWriteState.Idle
+        }
+
+        if (writeState is NfcWriteState.AwaitingTag) {
+            resumeAwaitTagTimeout()
+        }
+    }
+
+    private fun armAwaitTagTimeout(timeoutMs: Long) {
+        awaitDeadlineElapsedRealtime = SystemClock.elapsedRealtime() + timeoutMs
+        resumeAwaitTagTimeout()
+    }
+
+    private fun resumeAwaitTagTimeout() {
+        mainHandler.removeCallbacks(awaitTagTimeout)
+        val remainingMs = awaitDeadlineElapsedRealtime - SystemClock.elapsedRealtime()
+        if (remainingMs <= 0L) {
+            awaitTagTimeout.run()
+        } else {
+            mainHandler.postDelayed(awaitTagTimeout, remainingMs)
+        }
+    }
+
+    private fun clearAwaitTagTimeout() {
+        mainHandler.removeCallbacks(awaitTagTimeout)
+        awaitDeadlineElapsedRealtime = 0L
+    }
+
+    private fun syncNfcReaderMode() {
+        if (writeState is NfcWriteState.AwaitingTag) {
+            enableNfcReaderMode()
+        } else if (writeState !is NfcWriteState.Writing) {
+            nfcAdapter?.disableReaderMode(this)
+        }
     }
 
     private fun enableNfcReaderMode() {
@@ -174,6 +309,7 @@ class MainActivity : ComponentActivity() {
         val command = pendingCommand ?: return
 
         runOnUiThread {
+            clearAwaitTagTimeout()
             writeState = NfcWriteState.Writing
         }
 
@@ -181,6 +317,7 @@ class MainActivity : ComponentActivity() {
         val displayValue = pendingDisplayValue.orEmpty()
 
         runOnUiThread {
+            clearAwaitTagTimeout()
             pendingCommand = null
             pendingDisplayValue = null
 
@@ -192,6 +329,7 @@ class MainActivity : ComponentActivity() {
                     message = result.exceptionOrNull()?.message ?: "NFC Write에 실패했습니다.",
                 )
             }
+            syncNfcReaderMode()
         }
     }
 
@@ -208,5 +346,19 @@ class MainActivity : ComponentActivity() {
             @Suppress("DEPRECATION")
             vibrator.vibrate(200)
         }
+    }
+
+    companion object {
+        private const val AWAIT_TAG_TIMEOUT_MS = 15_000L
+        private const val KEY_PENDING_COMMAND = "pending_command"
+        private const val KEY_PENDING_DISPLAY = "pending_display"
+        private const val KEY_WRITE_STATE = "write_state"
+        private const val KEY_WRITE_DETAIL = "write_detail"
+        private const val KEY_AWAIT_DEADLINE = "await_deadline"
+        private const val STATE_IDLE = "idle"
+        private const val STATE_AWAITING = "awaiting"
+        private const val STATE_WRITING = "writing"
+        private const val STATE_SUCCESS = "success"
+        private const val STATE_ERROR = "error"
     }
 }

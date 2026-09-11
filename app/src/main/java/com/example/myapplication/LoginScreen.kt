@@ -45,7 +45,7 @@ fun LoginScreen(
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                text = "NFC Meter Tool",
+                text = "NTmore NFC",
                 fontSize = 32.sp,
                 fontWeight = FontWeight.ExtraBold,
                 color = MaterialTheme.colorScheme.primary

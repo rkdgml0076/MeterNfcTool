@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,9 +73,11 @@ fun MeterSettingScreen(
     onWriteClick: (commandType: CommandType, payload: String) -> Unit,
     onConfirmWrite: (commandType: CommandType, payload: String) -> Unit,
     onDismissConfirm: () -> Unit,
+    onCancelWrite: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    var selectedType by remember { mutableStateOf(CommandType.NFC_START) }
+    var selectedTypeName by rememberSaveable { mutableStateOf(CommandType.NFC_START.name) }
+    val selectedType = CommandType.valueOf(selectedTypeName)
     var expanded by remember { mutableStateOf(false) }
     val availableCommands = CommandType.entries
 
@@ -145,7 +148,7 @@ fun MeterSettingScreen(
                                 if (type != selectedType) {
                                     onCommandTypeChange(type)
                                 }
-                                selectedType = type
+                                selectedTypeName = type.name
                                 expanded = false
                             }
                         )
@@ -316,6 +319,15 @@ fun MeterSettingScreen(
                 )
             }
 
+            if (writeState is NfcWriteState.AwaitingTag) {
+                TextButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onCancelWrite,
+                ) {
+                    Text("태그 대기 취소")
+                }
+            }
+
             WriteStatusCard(writeState = writeState)
         }
     }
@@ -361,7 +373,7 @@ private fun WriteStatusCard(writeState: NfcWriteState) {
             MaterialTheme.colorScheme.onSurfaceVariant,
         )
         NfcWriteState.AwaitingTag -> Triple(
-            "계량기에 폰을 대주세요.",
+            "계량기에 폰을 대주세요. 15초 동안 대기합니다.",
             MaterialTheme.colorScheme.primaryContainer,
             MaterialTheme.colorScheme.onPrimaryContainer,
         )
