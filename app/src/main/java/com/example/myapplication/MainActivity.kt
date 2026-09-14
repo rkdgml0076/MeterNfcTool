@@ -25,6 +25,7 @@ import com.example.myapplication.nfc.A103Command
 import com.example.myapplication.nfc.A105Command
 import com.example.myapplication.nfc.A107Command
 import com.example.myapplication.nfc.A109Command
+import com.example.myapplication.nfc.NfcReader
 import com.example.myapplication.nfc.NfcWriteState
 import com.example.myapplication.nfc.NfcWriter
 import com.example.myapplication.ui.BootSplashScreen
@@ -41,14 +42,17 @@ class MainActivity : ComponentActivity() {
 
     private var pendingCommand: String? = null
     private var pendingDisplayValue: String? = null
+    private var pendingRead by mutableStateOf(false)
     private var awaitDeadlineElapsedRealtime: Long = 0L
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val awaitTagTimeout = Runnable {
         if (writeState is NfcWriteState.AwaitingTag) {
+            val retryLabel = if (pendingRead) "NFC Read" else "NFC Write"
             pendingCommand = null
             pendingDisplayValue = null
-            writeState = NfcWriteState.Error("태그 대기 시간이 초과되었습니다. 다시 NFC Write를 눌러주세요.")
+            pendingRead = false
+            writeState = NfcWriteState.Error("태그 대기 시간이 초과되었습니다. 다시 $retryLabel 를 눌러주세요.")
             syncNfcReaderMode()
         }
     }
@@ -93,6 +97,7 @@ class MainActivity : ComponentActivity() {
                             nfcAvailable = nfcAvailable,
                             nfcEnabled = nfcEnabled,
                             showConfirmDialog = showConfirmDialog,
+                            isReadSession = pendingRead,
                             onIntegerChange = { value ->
                                 integerPart = value
                                 resetResultStateIfNeeded()
@@ -123,13 +128,17 @@ class MainActivity : ComponentActivity() {
                             },
                             onConfirmWrite = { commandType, payload ->
                                 showConfirmDialog = false
-                                startWrite(
-                                    commandType,
-                                    payload,
-                                    integerPart,
-                                    decimalPart,
-                                    singleValue,
-                                )
+                                if (commandType == CommandType.NFC_READ) {
+                                    startRead()
+                                } else {
+                                    startWrite(
+                                        commandType,
+                                        payload,
+                                        integerPart,
+                                        decimalPart,
+                                        singleValue,
+                                    )
+                                }
                             },
                             onDismissConfirm = {
                                 showConfirmDialog = false
@@ -168,6 +177,7 @@ class MainActivity : ComponentActivity() {
         super.onSaveInstanceState(outState)
         outState.putString(KEY_PENDING_COMMAND, pendingCommand)
         outState.putString(KEY_PENDING_DISPLAY, pendingDisplayValue)
+        outState.putBoolean(KEY_PENDING_READ, pendingRead)
         outState.putLong(KEY_AWAIT_DEADLINE, awaitDeadlineElapsedRealtime)
         when (val state = writeState) {
             NfcWriteState.Idle -> outState.putString(KEY_WRITE_STATE, STATE_IDLE)
@@ -176,6 +186,7 @@ class MainActivity : ComponentActivity() {
             is NfcWriteState.Success -> {
                 outState.putString(KEY_WRITE_STATE, STATE_SUCCESS)
                 outState.putString(KEY_WRITE_DETAIL, state.displayValue)
+                outState.putBoolean(KEY_SUCCESS_IS_READ, state.isRead)
             }
             is NfcWriteState.Error -> {
                 outState.putString(KEY_WRITE_STATE, STATE_ERROR)
@@ -209,6 +220,7 @@ class MainActivity : ComponentActivity() {
             CommandType.METER_VALUE -> A105Command.formatDisplay(singleValue)
             CommandType.REPORT_CYCLE -> A107Command.formatDisplay(singleValue)
             CommandType.DEV_RESET -> A109Command.formatDisplay()
+            CommandType.NFC_READ -> "태그 읽기"
         }
     }
 
@@ -220,6 +232,16 @@ class MainActivity : ComponentActivity() {
         singleValue: String,
     ) {
         preparePendingData(commandType, payload, integerPart, decimalPart, singleValue)
+        pendingRead = false
+        writeState = NfcWriteState.AwaitingTag
+        syncNfcReaderMode()
+        armAwaitTagTimeout(AWAIT_TAG_TIMEOUT_MS)
+    }
+
+    private fun startRead() {
+        pendingCommand = READ_SESSION_MARKER
+        pendingDisplayValue = "태그 읽기"
+        pendingRead = true
         writeState = NfcWriteState.AwaitingTag
         syncNfcReaderMode()
         armAwaitTagTimeout(AWAIT_TAG_TIMEOUT_MS)
@@ -229,6 +251,7 @@ class MainActivity : ComponentActivity() {
         clearAwaitTagTimeout()
         pendingCommand = null
         pendingDisplayValue = null
+        pendingRead = false
         if (writeState is NfcWriteState.AwaitingTag || writeState is NfcWriteState.Writing) {
             writeState = NfcWriteState.Idle
         }
@@ -240,18 +263,20 @@ class MainActivity : ComponentActivity() {
 
         pendingCommand = savedInstanceState.getString(KEY_PENDING_COMMAND)
         pendingDisplayValue = savedInstanceState.getString(KEY_PENDING_DISPLAY)
+        pendingRead = savedInstanceState.getBoolean(KEY_PENDING_READ, false)
         awaitDeadlineElapsedRealtime = savedInstanceState.getLong(KEY_AWAIT_DEADLINE, 0L)
 
         writeState = when (savedInstanceState.getString(KEY_WRITE_STATE)) {
             STATE_AWAITING, STATE_WRITING -> {
-                if (pendingCommand.isNullOrEmpty()) {
-                    NfcWriteState.Idle
-                } else {
+                if (pendingRead || !pendingCommand.isNullOrEmpty()) {
                     NfcWriteState.AwaitingTag
+                } else {
+                    NfcWriteState.Idle
                 }
             }
             STATE_SUCCESS -> NfcWriteState.Success(
                 displayValue = savedInstanceState.getString(KEY_WRITE_DETAIL).orEmpty(),
+                isRead = savedInstanceState.getBoolean(KEY_SUCCESS_IS_READ, false),
             )
             STATE_ERROR -> NfcWriteState.Error(
                 message = savedInstanceState.getString(KEY_WRITE_DETAIL)
@@ -306,6 +331,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleTagDiscovered(tag: Tag) {
+        if (pendingRead) {
+            handleTagRead(tag)
+            return
+        }
+
         val command = pendingCommand ?: return
 
         runOnUiThread {
@@ -320,6 +350,7 @@ class MainActivity : ComponentActivity() {
             clearAwaitTagTimeout()
             pendingCommand = null
             pendingDisplayValue = null
+            pendingRead = false
 
             writeState = if (result.isSuccess) {
                 vibrateSuccess()
@@ -327,6 +358,35 @@ class MainActivity : ComponentActivity() {
             } else {
                 NfcWriteState.Error(
                     message = result.exceptionOrNull()?.message ?: "NFC Write에 실패했습니다.",
+                )
+            }
+            syncNfcReaderMode()
+        }
+    }
+
+    private fun handleTagRead(tag: Tag) {
+        runOnUiThread {
+            clearAwaitTagTimeout()
+            writeState = NfcWriteState.Writing
+        }
+
+        val result = NfcReader.readText(tag)
+
+        runOnUiThread {
+            clearAwaitTagTimeout()
+            pendingCommand = null
+            pendingDisplayValue = null
+            pendingRead = false
+
+            writeState = if (result.isSuccess) {
+                vibrateSuccess()
+                NfcWriteState.Success(
+                    displayValue = result.getOrDefault(""),
+                    isRead = true,
+                )
+            } else {
+                NfcWriteState.Error(
+                    message = result.exceptionOrNull()?.message ?: "NFC Read에 실패했습니다.",
                 )
             }
             syncNfcReaderMode()
@@ -352,9 +412,12 @@ class MainActivity : ComponentActivity() {
         private const val AWAIT_TAG_TIMEOUT_MS = 15_000L
         private const val KEY_PENDING_COMMAND = "pending_command"
         private const val KEY_PENDING_DISPLAY = "pending_display"
+        private const val KEY_PENDING_READ = "pending_read"
         private const val KEY_WRITE_STATE = "write_state"
         private const val KEY_WRITE_DETAIL = "write_detail"
+        private const val KEY_SUCCESS_IS_READ = "success_is_read"
         private const val KEY_AWAIT_DEADLINE = "await_deadline"
+        private const val READ_SESSION_MARKER = "READ"
         private const val STATE_IDLE = "idle"
         private const val STATE_AWAITING = "awaiting"
         private const val STATE_WRITING = "writing"

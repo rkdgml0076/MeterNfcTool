@@ -1,3 +1,168 @@
+### 2026-09-14 GitHub Commit
+#### 본 어플리케이션을 개발하기 위한 기본 작업 환경과 코드 프레임
+## 작업 환경 설정
+- 개발 환경(Code Editer) Android Studio 사용 <br>
+- MyApplication 기본 양식대로 Project 생성
+- Github 와 연동 및 git 활용을 위하여 git Download
+  Android Studio는 기본적으로 Git과 GitHub가 Plugins 되어있음
+- 코드 결과물 확인은 Clean and Assemble Project with Tests로 매번 빌드하여 확인중
+별도의 동작 결과 방법을 찾을 시 추후 기술
+- APK 파일 경로: 사용자디렉토리\AndroidStudioProjects\MyApplication\app\build\outputs\apk\debug\app-debug.apk
+
+
+## Ver 1.3.0 / NFC Read / 로그인 유지
+<br>
+NFC 태그 읽기(HEX)를 추가하고, 로그인 입력 유지와 로그인 화면 버전 표시를 반영. 앱 버전은 1.3.0 (versionCode 5)
+
+### app/build.gradle.kts
+```kotlin
+        versionCode = 5
+        versionName = "1.3.0"
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+```
+
+### LoginScreen(kotlin)
+```kotlin
+    var id by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    var loginError by rememberSaveable { mutableStateOf(false) }
+
+            Text(
+                text = "Ver ${BuildConfig.VERSION_NAME}",
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .padding(end = 20.dp, bottom = 16.dp),
+                fontSize = 11.sp,
+                color = Color.Gray,
+            )
+```
+
+### NfcReader(kotlin)
+```kotlin
+object NfcReader {
+    fun readText(tag: Tag): Result<String> {
+        val ndef = Ndef.get(tag)
+            ?: return Result.failure(IllegalStateException("NDEF를 지원하지 않는 태그입니다."))
+
+        return try {
+            ndef.connect()
+            val message = ndef.ndefMessage
+                ?: ndef.cachedNdefMessage
+                ?: return Result.failure(IllegalStateException("태그에 저장된 데이터가 없습니다."))
+
+            val hexValues = message.records.mapNotNull { decodeRecordAsHex(it) }
+            if (hexValues.isEmpty()) {
+                Result.failure(IllegalStateException("읽을 수 있는 데이터가 없습니다."))
+            } else {
+                Result.success(hexValues.joinToString("\n"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        } finally {
+            runCatching { ndef.close() }
+        }
+    }
+
+    private fun toHex(bytes: ByteArray): String {
+        return bytes.joinToString(" ") { "%02X".format(it) }
+    }
+}
+```
+
+### MeterSettingScreen(kotlin)
+```kotlin
+enum class CommandType(val title: String, val prefix: String) {
+    NFC_START("NFC 모드 진입 (A101)", "A101"),
+    NFC_EXIT("NFC 모드 종료 (A102)", "A102"),
+    METER_NUMBER("계량기 번호 설정 (A103)", "A103"),
+    METER_VALUE("검침 값 설정 (A105)", "A105"),
+    REPORT_CYCLE("검침 주기 설정 (A107)", "A107"),
+    DEV_RESET("단말기 재부팅 (A109)", "A109"),
+    NFC_READ("NFC 태그 읽기", "READ"),
+}
+
+        CommandType.NFC_READ -> when {
+            writeState is NfcWriteState.Success && writeState.isRead -> writeState.displayValue
+            writeState is NfcWriteState.AwaitingTag ||
+                (writeState is NfcWriteState.Writing && isReadSession) -> "대기 중"
+            else -> "--"
+        }
+```
+
+### MainActivity(kotlin)
+```kotlin
+                            onConfirmWrite = { commandType, payload ->
+                                showConfirmDialog = false
+                                if (commandType == CommandType.NFC_READ) {
+                                    startRead()
+                                } else {
+                                    startWrite(
+                                        commandType,
+                                        payload,
+                                        integerPart,
+                                        decimalPart,
+                                        singleValue,
+                                    )
+                                }
+                            },
+
+    private fun startRead() {
+        pendingCommand = READ_SESSION_MARKER
+        pendingDisplayValue = "태그 읽기"
+        pendingRead = true
+        writeState = NfcWriteState.AwaitingTag
+        syncNfcReaderMode()
+        armAwaitTagTimeout(AWAIT_TAG_TIMEOUT_MS)
+    }
+
+    private fun handleTagRead(tag: Tag) {
+        val result = NfcReader.readText(tag)
+        writeState = if (result.isSuccess) {
+            NfcWriteState.Success(
+                displayValue = result.getOrDefault(""),
+                isRead = true,
+            )
+        } else {
+            NfcWriteState.Error(
+                message = result.exceptionOrNull()?.message ?: "NFC Read에 실패했습니다.",
+            )
+        }
+    }
+```
+
+### NfcWriteState(kotlin)
+```kotlin
+    data class Success(val displayValue: String, val isRead: Boolean = false) : NfcWriteState
+```
+
+<br>
+
+### 진행 내용
+**Ver 1.3.0 / NFC Read / 로그인 화면 보완**
+1. NFC 태그 읽기 메뉴 추가
+ - Write와 동일하게 확인 → 15초 태그 대기 → Read
+ - 읽기 전 `--`, 대기 중 `대기 중`, 성공 시 HEX
+  --Image 참고-- <br>
+<img width="648" height="1404" alt="Image" src="https://github.com/user-attachments/assets/5ff854c6-49a2-40d1-8800-3e3a58c46019" /><br>
+
+ - 결과는 UTF-8 문자 대신 HEX로 표시 (예: A10706 → 41 31 30 37 30 36)
+ - 읽기 미리보기를 결과 칸으로 변경
+  --Image 참고-- <br>
+ <img width="648" height="1404" alt="Image" src="https://github.com/user-attachments/assets/c271f7d9-17d1-459b-9042-7d70dd1b5fad" /><br>
+
+2. 로그인 화면 가로/세로 전환 시 아이디·비밀번호가 초기화되던 문제 수정 (rememberSaveable)
+3. 앱 버전을 1.3.0 (versionCode 5)으로 올리고 로그인 화면 우측 하단에 `Ver 1.3.0` 표시
+ - 내비게이션 바 가림 방지를 위해 navigationBarsPadding 적용
+ --Image 참고-- <br>
+<img width="648" height="1404" alt="Image" src="https://github.com/user-attachments/assets/fc38d4c6-7305-4fd2-a8fd-1868a3a1e3eb" /><br>
+<br>
+---
+
 ### 2026-09-11 GitHub Commit
 #### 본 어플리케이션을 개발하기 위한 기본 작업 환경과 코드 프레임
 ## 작업 환경 설정
