@@ -80,9 +80,20 @@ fun MeterSettingScreen(
     modifier: Modifier = Modifier,
 ) {
     var selectedTypeName by rememberSaveable { mutableStateOf(CommandType.NFC_START.name) }
-    val selectedType = CommandType.valueOf(selectedTypeName)
     var expanded by remember { mutableStateOf(false) }
-    val availableCommands = CommandType.entries
+
+    // A101(NFC 모드 진입) Write 성공 전에는 A101/A102만 노출, 성공 후 나머지 메뉴 노출
+    val availableCommands = if (isNfcSessionActive) {
+        CommandType.entries
+    } else {
+        listOf(CommandType.NFC_START, CommandType.NFC_EXIT)
+    }
+
+    // 세션이 종료되어 현재 선택 메뉴가 숨겨지면 A101로 되돌림
+    if (CommandType.valueOf(selectedTypeName) !in availableCommands) {
+        selectedTypeName = CommandType.NFC_START.name
+    }
+    val selectedType = CommandType.valueOf(selectedTypeName)
 
     val isValid = when (selectedType) {
         CommandType.NFC_START -> A101Command.isValid()
@@ -367,6 +378,7 @@ fun MeterSettingScreen(
                 writeState = writeState,
                 isReadCommand = isReadCommand,
                 isReadSession = isReadSession,
+                isNfcSessionActive = isNfcSessionActive,
             )
         }
     }
@@ -416,13 +428,14 @@ private fun WriteStatusCard(
     writeState: NfcWriteState,
     isReadCommand: Boolean,
     isReadSession: Boolean,
+    isNfcSessionActive: Boolean,
 ) {
     val (message, containerColor, contentColor) = when (writeState) {
         NfcWriteState.Idle -> Triple(
-            if (isReadCommand) {
-                "NFC Read를 누른 뒤 태그에 폰을 대주세요."
-            } else {
-                "메뉴 선택 후 NFC Write를 눌러주세요."
+            when {
+                isReadCommand -> "NFC Read를 누른 뒤 태그에 폰을 대주세요."
+                !isNfcSessionActive -> "먼저 NFC 모드 진입(A101)을 Write 하면 나머지 메뉴가 표시됩니다."
+                else -> "메뉴 선택 후 NFC Write를 눌러주세요."
             },
             MaterialTheme.colorScheme.surfaceVariant,
             MaterialTheme.colorScheme.onSurfaceVariant,

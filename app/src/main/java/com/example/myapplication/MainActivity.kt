@@ -43,6 +43,8 @@ class MainActivity : ComponentActivity() {
     private var pendingCommand: String? = null
     private var pendingDisplayValue: String? = null
     private var pendingRead by mutableStateOf(false)
+    // A101(NFC 모드 진입) Write 성공 여부. true일 때만 A103/A105/A107/A109/Read 메뉴 노출
+    private var isNfcSessionActive by mutableStateOf(false)
     private var awaitDeadlineElapsedRealtime: Long = 0L
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -97,6 +99,7 @@ class MainActivity : ComponentActivity() {
                             nfcAvailable = nfcAvailable,
                             nfcEnabled = nfcEnabled,
                             showConfirmDialog = showConfirmDialog,
+                            isNfcSessionActive = isNfcSessionActive,
                             isReadSession = pendingRead,
                             onIntegerChange = { value ->
                                 integerPart = value
@@ -178,6 +181,7 @@ class MainActivity : ComponentActivity() {
         outState.putString(KEY_PENDING_COMMAND, pendingCommand)
         outState.putString(KEY_PENDING_DISPLAY, pendingDisplayValue)
         outState.putBoolean(KEY_PENDING_READ, pendingRead)
+        outState.putBoolean(KEY_NFC_SESSION_ACTIVE, isNfcSessionActive)
         outState.putLong(KEY_AWAIT_DEADLINE, awaitDeadlineElapsedRealtime)
         when (val state = writeState) {
             NfcWriteState.Idle -> outState.putString(KEY_WRITE_STATE, STATE_IDLE)
@@ -264,6 +268,7 @@ class MainActivity : ComponentActivity() {
         pendingCommand = savedInstanceState.getString(KEY_PENDING_COMMAND)
         pendingDisplayValue = savedInstanceState.getString(KEY_PENDING_DISPLAY)
         pendingRead = savedInstanceState.getBoolean(KEY_PENDING_READ, false)
+        isNfcSessionActive = savedInstanceState.getBoolean(KEY_NFC_SESSION_ACTIVE, false)
         awaitDeadlineElapsedRealtime = savedInstanceState.getLong(KEY_AWAIT_DEADLINE, 0L)
 
         writeState = when (savedInstanceState.getString(KEY_WRITE_STATE)) {
@@ -354,6 +359,10 @@ class MainActivity : ComponentActivity() {
 
             writeState = if (result.isSuccess) {
                 vibrateSuccess()
+                when (command) {
+                    A101Command.formatPayload() -> isNfcSessionActive = true   // NFC 모드 진입 → 나머지 메뉴 노출
+                    A102Command.formatPayload() -> isNfcSessionActive = false  // NFC 모드 종료 → A101/A102만 노출
+                }
                 NfcWriteState.Success(displayValue = displayValue)
             } else {
                 NfcWriteState.Error(
@@ -413,6 +422,7 @@ class MainActivity : ComponentActivity() {
         private const val KEY_PENDING_COMMAND = "pending_command"
         private const val KEY_PENDING_DISPLAY = "pending_display"
         private const val KEY_PENDING_READ = "pending_read"
+        private const val KEY_NFC_SESSION_ACTIVE = "nfc_session_active"
         private const val KEY_WRITE_STATE = "write_state"
         private const val KEY_WRITE_DETAIL = "write_detail"
         private const val KEY_SUCCESS_IS_READ = "success_is_read"

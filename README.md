@@ -1,3 +1,133 @@
+### 2026-10-23 GitHub Commit
+#### 본 어플리케이션을 개발하기 위한 기본 작업 환경과 코드 프레임
+## 작업 환경 설정
+- 개발 환경(Code Editer) Android Studio 사용 <br>
+- MyApplication 기본 양식대로 Project 생성
+- Github 와 연동 및 git 활용을 위하여 git Download
+  Android Studio는 기본적으로 Git과 GitHub가 Plugins 되어있음
+- 코드 결과물 확인은 Clean and Assemble Project with Tests로 매번 빌드하여 확인중
+별도의 동작 결과 방법을 찾을 시 추후 기술
+- APK 파일 경로: 사용자디렉토리\AndroidStudioProjects\MyApplication\app\build\outputs\apk\debug\app-debug.apk
+
+
+## Ver 1.3.1 / A101 Write 성공 시 메뉴 분리 노출
+<br>
+처음 접속 시에는 A101(NFC 모드 진입)·A102(NFC 모드 종료)만 보여주고, A101 Write 성공 후에 나머지 설정 메뉴가 표출되도록 변경. 앱 버전은 1.3.1 (versionCode 6)
+
+### app/build.gradle.kts
+```kotlin
+        versionCode = 6
+        versionName = "1.3.1"
+```
+
+### MainActivity(kotlin)
+```kotlin
+    // A101(NFC 모드 진입) Write 성공 여부. true일 때만 A103/A105/A107/A109/Read 메뉴 노출
+    private var isNfcSessionActive by mutableStateOf(false)
+
+                        MeterSettingScreen(
+                            ...
+                            isNfcSessionActive = isNfcSessionActive,
+                            isReadSession = pendingRead,
+                            ...
+                        )
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        ...
+        outState.putBoolean(KEY_NFC_SESSION_ACTIVE, isNfcSessionActive)
+        ...
+    }
+
+    private fun restoreWriteSession(savedInstanceState: Bundle?) {
+        ...
+        isNfcSessionActive = savedInstanceState.getBoolean(KEY_NFC_SESSION_ACTIVE, false)
+        ...
+    }
+
+    private fun handleTagDiscovered(tag: Tag) {
+        ...
+            writeState = if (result.isSuccess) {
+                vibrateSuccess()
+                when (command) {
+                    A101Command.formatPayload() -> isNfcSessionActive = true   // NFC 모드 진입 → 나머지 메뉴 노출
+                    A102Command.formatPayload() -> isNfcSessionActive = false  // NFC 모드 종료 → A101/A102만 노출
+                }
+                NfcWriteState.Success(displayValue = displayValue)
+            } else {
+        ...
+    }
+
+    companion object {
+        ...
+        private const val KEY_NFC_SESSION_ACTIVE = "nfc_session_active"
+        ...
+    }
+```
+
+### MeterSettingScreen(kotlin)
+```kotlin
+    var selectedTypeName by rememberSaveable { mutableStateOf(CommandType.NFC_START.name) }
+    var expanded by remember { mutableStateOf(false) }
+
+    // A101(NFC 모드 진입) Write 성공 전에는 A101/A102만 노출, 성공 후 나머지 메뉴 노출
+    val availableCommands = if (isNfcSessionActive) {
+        CommandType.entries
+    } else {
+        listOf(CommandType.NFC_START, CommandType.NFC_EXIT)
+    }
+
+    // 세션이 종료되어 현재 선택 메뉴가 숨겨지면 A101로 되돌림
+    if (CommandType.valueOf(selectedTypeName) !in availableCommands) {
+        selectedTypeName = CommandType.NFC_START.name
+    }
+    val selectedType = CommandType.valueOf(selectedTypeName)
+
+            WriteStatusCard(
+                writeState = writeState,
+                isReadCommand = isReadCommand,
+                isReadSession = isReadSession,
+                isNfcSessionActive = isNfcSessionActive,
+            )
+
+@Composable
+private fun WriteStatusCard(
+    writeState: NfcWriteState,
+    isReadCommand: Boolean,
+    isReadSession: Boolean,
+    isNfcSessionActive: Boolean,
+) {
+    val (message, containerColor, contentColor) = when (writeState) {
+        NfcWriteState.Idle -> Triple(
+            when {
+                isReadCommand -> "NFC Read를 누른 뒤 태그에 폰을 대주세요."
+                !isNfcSessionActive -> "먼저 NFC 모드 진입(A101)을 Write 하면 나머지 메뉴가 표시됩니다."
+                else -> "메뉴 선택 후 NFC Write를 눌러주세요."
+            },
+            MaterialTheme.colorScheme.surfaceVariant,
+            MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+```
+
+<br>
+
+### 진행 내용
+**Ver 1.3.1 / A101 Write 성공 시 메뉴 분리 노출**
+1. 처음 접속 시 설정 메뉴에 `NFC 모드 진입 (A101)`, `NFC 모드 종료 (A102)`만 노출
+ - A101을 Write 하기 전에는 나머지 Write 메뉴가 의미가 없어 숨김 처리
+2. A101 Write 성공 시 A103 / A105 / A107 / A109 / NFC 태그 읽기 메뉴 표출
+ - `MainActivity`의 `isNfcSessionActive` 플래그로 관리
+ - 기존에 미사용으로 남아 있던 `MeterSettingScreen`의 `isNfcSessionActive` 파라미터를 실제로 연결
+3. A102(NFC 모드 종료) Write 성공 시 다시 A101/A102만 노출
+ - 숨겨진 메뉴가 선택돼 있었다면 A101로 자동 복귀
+4. 세션 상태는 `onSaveInstanceState`로 저장해 화면 회전 후에도 유지
+5. A101 Write 전 Idle 안내 문구 변경
+ - `먼저 NFC 모드 진입(A101)을 Write 하면 나머지 메뉴가 표시됩니다.`
+6. 앱 버전을 1.3.1 (versionCode 6)으로 올림
+ - 로그인 화면은 `BuildConfig.VERSION_NAME` 기준으로 `Ver 1.3.1` 표시
+7. 작업 전 GitHub 코드를 `MyApplication_backup` 폴더로 클론하여 백업본 확보
+<br>
+---
+
 ### 2026-09-14 GitHub Commit
 #### 본 어플리케이션을 개발하기 위한 기본 작업 환경과 코드 프레임
 ## 작업 환경 설정
