@@ -1,5 +1,7 @@
 package com.example.myapplication.ui
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -80,9 +82,20 @@ fun MeterSettingScreen(
     modifier: Modifier = Modifier,
 ) {
     var selectedTypeName by rememberSaveable { mutableStateOf(CommandType.NFC_START.name) }
-    val selectedType = CommandType.valueOf(selectedTypeName)
     var expanded by remember { mutableStateOf(false) }
-    val availableCommands = CommandType.entries
+
+    // Write 메뉴는 A101 성공 후에만 열린다. Read는 시작 시점과 A102 이후에도 고를 수 있다.
+    val availableCommands = if (isNfcSessionActive) {
+        CommandType.entries
+    } else {
+        listOf(CommandType.NFC_START, CommandType.NFC_EXIT, CommandType.NFC_READ)
+    }
+
+    // 세션이 종료되어 현재 선택 메뉴가 숨겨지면 A101로 되돌림
+    if (CommandType.valueOf(selectedTypeName) !in availableCommands) {
+        selectedTypeName = CommandType.NFC_START.name
+    }
+    val selectedType = CommandType.valueOf(selectedTypeName)
 
     val isValid = when (selectedType) {
         CommandType.NFC_START -> A101Command.isValid()
@@ -130,7 +143,12 @@ fun MeterSettingScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(innerPadding),
+        ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -274,7 +292,7 @@ fun MeterSettingScreen(
                 }
                 CommandType.NFC_READ -> {
                     Text(
-                        text = "태그에 저장된 값을 HEX로 읽습니다.",
+                        text = "태그에 저장된 값을 HEX로 읽어 필드별로 분류합니다.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -303,26 +321,29 @@ fun MeterSettingScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
+                    val isReadResult = isReadCommand &&
+                        writeState is NfcWriteState.Success && writeState.isRead
                     Text(
+                        modifier = if (isReadResult) Modifier.fillMaxWidth() else Modifier,
                         text = displayValue,
-                        style = if (isReadCommand && displayValue.contains(" ")) {
-                            MaterialTheme.typography.titleMedium
+                        style = if (isReadResult) {
+                            MaterialTheme.typography.bodyMedium
                         } else {
                             MaterialTheme.typography.displaySmall
                         },
                         fontWeight = FontWeight.Bold,
-                        fontFamily = if (isReadCommand && displayValue.contains(" ")) {
+                        fontFamily = if (isReadResult) {
                             FontFamily.Monospace
                         } else {
                             FontFamily.Default
                         },
-                        textAlign = TextAlign.Center,
+                        textAlign = if (isReadResult) TextAlign.Start else TextAlign.Center,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = when {
                             !isReadCommand -> "전송 명령: $command"
-                            writeState is NfcWriteState.Success && writeState.isRead -> "HEX"
+                            writeState is NfcWriteState.Success && writeState.isRead -> "필드 분류 (hex 2글자 = 1Byte)"
                             writeState is NfcWriteState.AwaitingTag -> "태그에 폰을 대주세요"
                             else -> "NFC Read 후 태그를 대면 여기에 표시됩니다"
                         },
@@ -334,7 +355,21 @@ fun MeterSettingScreen(
                 }
             }
 
-            // 전송 버튼
+            WriteStatusCard(
+                writeState = writeState,
+                isReadCommand = isReadCommand,
+                isReadSession = isReadSession,
+                isNfcSessionActive = isNfcSessionActive,
+            )
+        }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
             Button(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -362,12 +397,7 @@ fun MeterSettingScreen(
                     Text("태그 대기 취소")
                 }
             }
-
-            WriteStatusCard(
-                writeState = writeState,
-                isReadCommand = isReadCommand,
-                isReadSession = isReadSession,
-            )
+            }
         }
     }
 
@@ -416,13 +446,14 @@ private fun WriteStatusCard(
     writeState: NfcWriteState,
     isReadCommand: Boolean,
     isReadSession: Boolean,
+    isNfcSessionActive: Boolean,
 ) {
     val (message, containerColor, contentColor) = when (writeState) {
         NfcWriteState.Idle -> Triple(
-            if (isReadCommand) {
-                "NFC Read를 누른 뒤 태그에 폰을 대주세요."
-            } else {
-                "메뉴 선택 후 NFC Write를 눌러주세요."
+            when {
+                isReadCommand -> "NFC Read를 누른 뒤 태그에 폰을 대주세요."
+                !isNfcSessionActive -> "먼저 NFC 모드 진입(A101)을 Write 하면 나머지 메뉴가 표시됩니다."
+                else -> "메뉴 선택 후 NFC Write를 눌러주세요."
             },
             MaterialTheme.colorScheme.surfaceVariant,
             MaterialTheme.colorScheme.onSurfaceVariant,
@@ -439,7 +470,7 @@ private fun WriteStatusCard(
         )
         is NfcWriteState.Success -> Triple(
             if (writeState.isRead) {
-                "읽기 완료: ${writeState.displayValue}"
+                "읽기 완료. 결과는 위 카드에서 확인하세요."
             } else {
                 "설정 완료: ${writeState.displayValue}"
             },
