@@ -10,6 +10,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
+import java.util.concurrent.atomic.AtomicBoolean
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -25,6 +26,7 @@ import com.example.myapplication.nfc.A103Command
 import com.example.myapplication.nfc.A105Command
 import com.example.myapplication.nfc.A107Command
 import com.example.myapplication.nfc.A109Command
+import com.example.myapplication.nfc.NfcReadFieldParser
 import com.example.myapplication.nfc.NfcReader
 import com.example.myapplication.nfc.NfcWriteState
 import com.example.myapplication.nfc.NfcWriter
@@ -46,6 +48,8 @@ class MainActivity : ComponentActivity() {
     // A101(NFC 모드 진입) Write 성공 여부. true일 때만 A103/A105/A107/A109/Read 메뉴 노출
     private var isNfcSessionActive by mutableStateOf(false)
     private var awaitDeadlineElapsedRealtime: Long = 0L
+    private var inForeground = false
+    private val tagBusy = AtomicBoolean(false)
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val awaitTagTimeout = Runnable {
@@ -163,12 +167,14 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         nfcEnabled = nfcAdapter?.isEnabled == true
+        inForeground = true
         syncNfcReaderMode()
     }
 
     override fun onPause() {
-        super.onPause()
+        inForeground = false
         nfcAdapter?.disableReaderMode(this)
+        super.onPause()
     }
 
     override fun onDestroy() {
@@ -201,6 +207,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        // reader mode를 끈 직후 시스템이 NFC 인텐트를 보내도 화면을 다시 만들지 않는다.
+        if (intent.action?.startsWith("android.nfc.action.") == true) {
+            setIntent(
+                Intent(this, MainActivity::class.java).apply {
+                    action = Intent.ACTION_MAIN
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+                },
+            )
+        }
     }
 
     private fun resetResultStateIfNeeded() {
@@ -316,11 +331,20 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun syncNfcReaderMode() {
-        if (writeState is NfcWriteState.AwaitingTag) {
+        // 대기 중에만 태그를 잡는다. 미리 잡아 두면 그 발견이 소모되어
+        // 이후 Write/Read가 시간 초과되거나 NDEF 없는 태그로 보인다.
+        if (inForeground && writeState is NfcWriteState.AwaitingTag) {
             enableNfcReaderMode()
         } else if (writeState !is NfcWriteState.Writing) {
             nfcAdapter?.disableReaderMode(this)
         }
+    }
+
+    private fun releaseTag(tag: Tag) {
+        // 폰을 태그 위에 둔 채로 감지를 끌 때 시스템이 "새 태그" 팝업을 띄우지 않게 한다.
+        nfcAdapter?.ignore(tag, TAG_IGNORE_MS, null, null)
+        tagBusy.set(false)
+        syncNfcReaderMode()
     }
 
     private fun enableNfcReaderMode() {
@@ -336,12 +360,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleTagDiscovered(tag: Tag) {
+        val command = pendingCommand
         if (pendingRead) {
+            if (!tagBusy.compareAndSet(false, true)) return
             handleTagRead(tag)
             return
         }
-
-        val command = pendingCommand ?: return
+        if (command == null || !tagBusy.compareAndSet(false, true)) return
 
         runOnUiThread {
             clearAwaitTagTimeout()
@@ -369,7 +394,7 @@ class MainActivity : ComponentActivity() {
                     message = result.exceptionOrNull()?.message ?: "NFC Write에 실패했습니다.",
                 )
             }
-            syncNfcReaderMode()
+            releaseTag(tag)
         }
     }
 
@@ -379,7 +404,7 @@ class MainActivity : ComponentActivity() {
             writeState = NfcWriteState.Writing
         }
 
-        val result = NfcReader.readText(tag)
+        val result = NfcReader.read(tag)
 
         runOnUiThread {
             clearAwaitTagTimeout()
@@ -390,7 +415,7 @@ class MainActivity : ComponentActivity() {
             writeState = if (result.isSuccess) {
                 vibrateSuccess()
                 NfcWriteState.Success(
-                    displayValue = result.getOrDefault(""),
+                    displayValue = NfcReadFieldParser.format(result.getOrThrow()),
                     isRead = true,
                 )
             } else {
@@ -398,7 +423,7 @@ class MainActivity : ComponentActivity() {
                     message = result.exceptionOrNull()?.message ?: "NFC Read에 실패했습니다.",
                 )
             }
-            syncNfcReaderMode()
+            releaseTag(tag)
         }
     }
 
@@ -419,6 +444,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val AWAIT_TAG_TIMEOUT_MS = 15_000L
+        private const val TAG_IGNORE_MS = 1_500
         private const val KEY_PENDING_COMMAND = "pending_command"
         private const val KEY_PENDING_DISPLAY = "pending_display"
         private const val KEY_PENDING_READ = "pending_read"

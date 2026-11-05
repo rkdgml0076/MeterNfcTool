@@ -1,3 +1,88 @@
+### 2026-11-05 GitHub Commit
+#### 본 어플리케이션을 개발하기 위한 기본 작업 환경과 코드 프레임
+## 작업 환경 설정
+- 개발 환경(Code Editer) Android Studio 사용 <br>
+- MyApplication 기본 양식대로 Project 생성
+- Github 와 연동 및 git 활용을 위하여 git Download
+  Android Studio는 기본적으로 Git과 GitHub가 Plugins 되어있음
+- 코드 결과물 확인은 Clean and Assemble Project with Tests로 매번 빌드하여 확인중
+별도의 동작 결과 방법을 찾을 시 추후 기술
+- APK 파일 경로: 사용자디렉토리\AndroidStudioProjects\MyApplication\app\build\outputs\apk\debug\app-debug.apk
+
+
+## NFC Read 필드 분류 / 태그 감지 보정
+<br>
+Read 결과를 80글자(40 Byte) hex 기준으로 필드에 나누고, 태그 감지 시점을 Write/Read 대기로 한정. 앱 버전은 1.3.1 (versionCode 6) 유지
+
+### NfcReadFieldParser(kotlin)
+```kotlin
+    // 위치와 길이는 hex 글자 기준. hex 2글자 = 1 Byte. 전체 80글자(40 Byte)
+    FieldSpec("cmdByte", 1, 4),
+    FieldSpec("meterNo", 5, 8),
+    FieldSpec("FinalReport", 13, 12),
+    FieldSpec("Finalmeter", 25, 12),
+    FieldSpec("msrCnt", 37, 2),
+    FieldSpec("msrStdValue", 39, 8),
+    FieldSpec("meterCaliber", 47, 2),
+    FieldSpec("meterStatus", 49, 2),
+    FieldSpec("rsrp", 51, 4),
+    FieldSpec("NoAck", 55, 2),
+    FieldSpec("mno", 57, 2),
+    FieldSpec("modem", 59, 2),
+    FieldSpec("devVolt", 61, 2),
+    FieldSpec("comOnOff", 63, 2),
+    FieldSpec("ctnNO", 65, 8),
+    FieldSpec("devFw", 73, 4),
+    FieldSpec("meterCode", 77, 2),
+    FieldSpec("format", 79, 2),
+```
+
+### MeterSettingScreen(kotlin)
+```kotlin
+    // Write 메뉴는 A101 성공 후에만 열린다. Read는 시작 시점과 A102 이후에도 고를 수 있다.
+    val availableCommands = if (isNfcSessionActive) {
+        CommandType.entries
+    } else {
+        listOf(CommandType.NFC_START, CommandType.NFC_EXIT, CommandType.NFC_READ)
+    }
+```
+
+### MainActivity(kotlin)
+```kotlin
+    private fun syncNfcReaderMode() {
+        // 대기 중에만 태그를 잡는다.
+        if (inForeground && writeState is NfcWriteState.AwaitingTag) {
+            enableNfcReaderMode()
+        } else if (writeState !is NfcWriteState.Writing) {
+            nfcAdapter?.disableReaderMode(this)
+        }
+    }
+
+    private fun releaseTag(tag: Tag) {
+        nfcAdapter?.ignore(tag, TAG_IGNORE_MS, null, null)
+        tagBusy.set(false)
+        syncNfcReaderMode()
+    }
+```
+
+<br>
+
+### 진행 내용
+**NFC Read 필드 분류 / 태그 감지 보정**
+1. Read 값을 문자로 해석하지 않고 hex 글자로 자름. 2글자가 1 Byte
+ - 80글자면 40 Byte로 18개 필드를 모두 채움
+ - 68글자(34 Byte)처럼 짧으면 있는 만큼만 채우고, 잘린 필드는 `(!)`, 없는 필드는 `--`
+  --Image 참고-- <br>
+<img width="648" height="1404" alt="Image" src="https://github.com/user-attachments/assets/91a2c70e-ab96-45b0-9692-6d8875f131c0" /><br>
+2. Read 메뉴는 처음 화면과 A102 이후에도 선택 가능. A103/A105/A107/A109 Write는 A101 성공 후에만 노출
+3. 태그는 NFC Write/Read를 눌러 대기 중일 때만 감지
+ - 미리 잡아 두면 시간 초과되거나 `NDEF를 지원하지 않는 태그`로 보이던 현상 보정
+ - 처리 직후 `ignore`로 시스템 "새 태그" 팝업을 막음
+ - `NDEF_DISCOVERED` 필터는 두지 않고 액티비티는 `singleTop`
+4. Read 결과가 길어도 NFC Read 버튼은 화면 아래에 고정
+<br>
+---
+
 ### 2026-10-23 GitHub Commit
 #### 본 어플리케이션을 개발하기 위한 기본 작업 환경과 코드 프레임
 ## 작업 환경 설정
