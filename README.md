@@ -1,3 +1,69 @@
+### 2026-11-06 GitHub Commit
+#### 본 어플리케이션을 개발하기 위한 기본 작업 환경과 코드 프레임
+## 작업 환경 설정
+- 개발 환경(Code Editer) Android Studio 사용 <br>
+- MyApplication 기본 양식대로 Project 생성
+- Github 와 연동 및 git 활용을 위하여 git Download
+  Android Studio는 기본적으로 Git과 GitHub가 Plugins 되어있음
+- 코드 결과물 확인은 Clean and Assemble Project with Tests로 매번 빌드하여 확인중
+별도의 동작 결과 방법을 찾을 시 추후 기술
+- APK 파일 경로: 사용자디렉토리\AndroidStudioProjects\MyApplication\app\build\outputs\apk\debug\app-debug.apk
+
+
+## Ver 1.3.2 / NFC Read 필드 해석
+<br>
+Read 결과를 필드명 아래에 값으로 보여주고, 주요 필드는 화면용 문구로 해석. 앱 버전은 1.3.2 (versionCode 7)
+
+### app/build.gradle.kts
+```kotlin
+        versionCode = 7
+        versionName = "1.3.2"
+```
+
+### NfcReadFieldParser(kotlin)
+```kotlin
+    FieldSpec("cmdByte", 1, 4, "저장정보"),
+    FieldSpec("meterNo", 5, 8, "계량기번호"),
+    FieldSpec("FinalReport", 13, 12, "최종전송시간"),
+    FieldSpec("Finalmeter", 25, 12, "최종검침시간"),
+    FieldSpec("msrCnt", 37, 2, "데이터 개수"),
+    FieldSpec("msrStdValue", 39, 8, "검침값"),
+    FieldSpec("meterCaliber", 47, 2, "구경"),
+    FieldSpec("meterStatus", 49, 2, "경보상태"),
+    FieldSpec("rsrp", 51, 4, "RSRP"),
+    FieldSpec("NoAck", 55, 2, "ACK 미수신 횟수"),
+    FieldSpec("mno", 57, 2, "통신사"),
+    FieldSpec("modem", 59, 2, "모뎀상태"),
+    FieldSpec("devVolt", 61, 2, "배터리"),
+    FieldSpec("comOnOff", 63, 2, "통신 ON/OFF상태"),
+    FieldSpec("ctnNO", 65, 8, "전화번호"),
+    FieldSpec("devFw", 73, 4, "F/W"),
+    FieldSpec("meterCode", 77, 2, "기물코드"),
+    FieldSpec("format", 79, 2, "포맷 버전"),
+```
+
+<br>
+
+### 진행 내용
+**Ver 1.3.2 / NFC Read 필드 해석**
+1. 필드명은 위에, 값은 아래에 표시. 항목 사이에 간격을 둠
+2. 저장정보 `D500` → `STOR_RES`
+3. 계량기번호 `12345678` → `12-345678`
+4. 최종전송시간, 최종검침시간은 6바이트를 `2026-11-06 20:20:00` 형식으로 표시
+5. 검침값은 리틀엔디안 정수에 소수점 3자리와 `ton`. `CD6D0D00` → `880.077 ton`
+6. 구경 `13` → `15mm`, 통신사 `98` → `LGU+`
+7. 모뎀상태 `00` → `정상`, 통신 ON/OFF상태 `01` → `ON`, `0F` → `OFF`
+8. 배터리는 hex 바이트를 10으로 나눔. `23` → `3.5V`
+9. 전화번호는 읽은 값 앞에 `01`을 붙임
+10. F/W `0102` → `V12`, `0002` → `V02`
+11. 앱 버전을 1.3.2 (versionCode 7)으로 올림
+ - 로그인 화면은 `BuildConfig.VERSION_NAME` 기준으로 `Ver 1.3.2` 표시
+  --Image 참고-- <br>
+<img width="648" height="1404" alt="Image" src="https://github.com/user-attachments/assets/6e677e33-1396-4ea1-b881-46339dd86e64" /><br>
+<img width="648" height="1404" alt="Image" src="https://github.com/user-attachments/assets/6f362afc-3afc-4a7f-a4e6-0f7ac7581e58" /><br>
+<br>
+---
+
 ### 2026-11-05 GitHub Commit
 #### 본 어플리케이션을 개발하기 위한 기본 작업 환경과 코드 프레임
 ## 작업 환경 설정

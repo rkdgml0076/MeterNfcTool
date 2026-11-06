@@ -34,7 +34,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -309,36 +308,36 @@ fun MeterSettingScreen(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
                 ),
             ) {
+                val isReadResult = isReadCommand &&
+                    writeState is NfcWriteState.Success && writeState.isRead
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                    horizontalAlignment = if (isReadResult) {
+                        Alignment.Start
+                    } else {
+                        Alignment.CenterHorizontally
+                    },
                 ) {
                     Text(
+                        modifier = Modifier.fillMaxWidth(),
                         text = if (isReadCommand) "읽기 결과" else "미리보기",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    val isReadResult = isReadCommand &&
-                        writeState is NfcWriteState.Success && writeState.isRead
-                    Text(
-                        modifier = if (isReadResult) Modifier.fillMaxWidth() else Modifier,
-                        text = displayValue,
-                        style = if (isReadResult) {
-                            MaterialTheme.typography.bodyMedium
-                        } else {
-                            MaterialTheme.typography.displaySmall
-                        },
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = if (isReadResult) {
-                            FontFamily.Monospace
-                        } else {
-                            FontFamily.Default
-                        },
                         textAlign = if (isReadResult) TextAlign.Start else TextAlign.Center,
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    if (isReadResult) {
+                        ReadResultList(text = displayValue)
+                    } else {
+                        Text(
+                            text = displayValue,
+                            style = MaterialTheme.typography.displaySmall,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = when {
@@ -423,6 +422,35 @@ fun MeterSettingScreen(
                 TextButton(onClick = onDismissConfirm) { Text("취소") }
             },
         )
+    }
+}
+
+@Composable
+private fun ReadResultList(text: String) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        text.split("\n\n").forEach { block ->
+            val lines = block.lines().filter { it.isNotBlank() }
+            if (lines.size >= 2) {
+                Spacer(modifier = Modifier.height(14.dp))
+                Text(
+                    text = lines.first(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = lines.drop(1).joinToString("\n"),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            } else if (lines.isNotEmpty()) {
+                Text(
+                    text = lines.first(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
     }
 }
 
