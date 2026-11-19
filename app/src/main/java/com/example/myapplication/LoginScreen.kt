@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -22,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -29,11 +31,14 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun LoginScreen(
-    onLoginSuccess: () -> Unit,
+    onLoginSuccess: (showFingerprintHint: Boolean) -> Unit,
 ) {
+    val context = LocalContext.current
     var id by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var loginError by rememberSaveable { mutableStateOf(false) }
+    var biometricError by rememberSaveable { mutableStateOf<String?>(null) }
+    val fingerprintReady = LoginBiometric.canAuthenticate(context) && LoginBiometric.isEnabled(context)
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -92,7 +97,11 @@ fun LoginScreen(
                 Button(
                     onClick = {
                         if ((id == "admin" && password == "admin") || (id == "ntmore" && password == "ntmore09")) {
-                            onLoginSuccess()
+                            val canUseFingerprint = LoginBiometric.canAuthenticate(context)
+                            if (canUseFingerprint) {
+                                LoginBiometric.setEnabled(context, true)
+                            }
+                            onLoginSuccess(canUseFingerprint)
                         } else {
                             loginError = true
                         }
@@ -103,10 +112,42 @@ fun LoginScreen(
                     Text("로그인", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
 
+                if (fingerprintReady) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedButton(
+                        onClick = {
+                            biometricError = null
+                            val activity = context.findFragmentActivity()
+                            if (activity == null) {
+                                biometricError = "이 화면에서는 지문 창을 열 수 없습니다. 아이디와 비밀번호로 로그인하세요."
+                            } else {
+                                LoginBiometric.authenticate(
+                                    activity = activity,
+                                    onSuccess = { onLoginSuccess(false) },
+                                    onError = { biometricError = it },
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.medium,
+                    ) {
+                        Text("지문으로 로그인", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
                 if (loginError) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = "아이디 또는 비밀번호가 틀렸습니다.",
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 13.sp
+                    )
+                }
+
+                if (biometricError != null) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = biometricError.orEmpty(),
                         color = MaterialTheme.colorScheme.error,
                         fontSize = 13.sp
                     )

@@ -1,6 +1,8 @@
 package com.example.myapplication.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -11,8 +13,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenuItem
@@ -34,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -45,6 +50,8 @@ import com.example.myapplication.nfc.A103Command
 import com.example.myapplication.nfc.A105Command
 import com.example.myapplication.nfc.A107Command
 import com.example.myapplication.nfc.A109Command
+import com.example.myapplication.nfc.A111Command
+import com.example.myapplication.nfc.A113Command
 import com.example.myapplication.nfc.NfcWriteState
 import com.example.myapplication.ui.theme.MyApplicationTheme
 
@@ -54,7 +61,9 @@ enum class CommandType(val title: String, val prefix: String) {
     METER_NUMBER("계량기 번호 설정 (A103)", "A103"),
     METER_VALUE("검침 값 설정 (A105)", "A105"),
     REPORT_CYCLE("검침 주기 설정 (A107)", "A107"),
-    DEV_RESET("단말기 재부팅 (A109)", "A109"),
+    REBUILD_ALL("단말기 초기화 (A109)", "A109"),
+    DEV_RESET("단말기 재부팅 (A111)", "A111"),
+    CALIBRATION("보정값 설정 (A113)", "A113"),
     NFC_READ("NFC 태그 읽기", "READ"),
 }
 
@@ -64,6 +73,9 @@ fun MeterSettingScreen(
     integerPart: String,
     decimalPart: String,
     singleValue: String,
+    meterValue: String,
+    calibrationValue: String,
+    calibrationPositive: Boolean,
     writeState: NfcWriteState,
     nfcAvailable: Boolean,
     nfcEnabled: Boolean,
@@ -72,12 +84,16 @@ fun MeterSettingScreen(
     onIntegerChange: (String) -> Unit,
     onDecimalChange: (String) -> Unit,
     onSingleValueChange: (String) -> Unit,
+    onMeterValueChange: (String) -> Unit,
+    onCalibrationChange: (String) -> Unit,
+    onCalibrationPositiveChange: (Boolean) -> Unit,
     onCommandTypeChange: (CommandType) -> Unit = {},
     onWriteClick: (commandType: CommandType, payload: String) -> Unit,
     onConfirmWrite: (commandType: CommandType, payload: String) -> Unit,
     onDismissConfirm: () -> Unit,
     onCancelWrite: () -> Unit = {},
     isReadSession: Boolean = false,
+    showFingerprintHint: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     var selectedTypeName by rememberSaveable { mutableStateOf(CommandType.NFC_START.name) }
@@ -100,9 +116,11 @@ fun MeterSettingScreen(
         CommandType.NFC_START -> A101Command.isValid()
         CommandType.NFC_EXIT -> A102Command.isValid()
         CommandType.METER_NUMBER -> A103Command.isValid(integerPart, decimalPart)
-        CommandType.METER_VALUE -> A105Command.isValid(singleValue)
+        CommandType.METER_VALUE -> A105Command.isValid(meterValue)
         CommandType.REPORT_CYCLE -> A107Command.isValid(singleValue)
-        CommandType.DEV_RESET -> A109Command.isValid()
+        CommandType.REBUILD_ALL -> A109Command.isValid()
+        CommandType.DEV_RESET -> A111Command.isValid()
+        CommandType.CALIBRATION -> A113Command.isValid(calibrationValue, calibrationPositive, meterValue)
         CommandType.NFC_READ -> true
     }
 
@@ -110,9 +128,11 @@ fun MeterSettingScreen(
         CommandType.NFC_START -> A101Command.formatDisplay()
         CommandType.NFC_EXIT -> A102Command.formatDisplay()
         CommandType.METER_NUMBER -> if (isValid) A103Command.formatDisplay(integerPart, decimalPart) else "--"
-        CommandType.METER_VALUE -> if (isValid) A105Command.formatDisplay(singleValue) else "--"
+        CommandType.METER_VALUE -> if (isValid) A105Command.formatDisplay(meterValue) else "--"
         CommandType.REPORT_CYCLE -> if (isValid) A107Command.formatDisplay(singleValue) else "--"
-        CommandType.DEV_RESET -> A109Command.formatDisplay()
+        CommandType.REBUILD_ALL -> A109Command.formatDisplay()
+        CommandType.DEV_RESET -> A111Command.formatDisplay()
+        CommandType.CALIBRATION -> A113Command.formatDisplay(calibrationValue, calibrationPositive)
         CommandType.NFC_READ -> when {
             writeState is NfcWriteState.Success && writeState.isRead -> writeState.displayValue
             writeState is NfcWriteState.AwaitingTag ||
@@ -125,9 +145,11 @@ fun MeterSettingScreen(
         CommandType.NFC_START -> A101Command.formatPayload()
         CommandType.NFC_EXIT -> A102Command.formatPayload()
         CommandType.METER_NUMBER -> if (isValid) A103Command.formatPayload(integerPart, decimalPart) else "A103--------"
-        CommandType.METER_VALUE -> if (isValid) A105Command.formatPayload(singleValue) else "A105--------"
+        CommandType.METER_VALUE -> if (isValid) A105Command.formatPayload(meterValue) else "A105--------"
         CommandType.REPORT_CYCLE -> if (isValid) A107Command.formatPayload(singleValue) else "A107--"
-        CommandType.DEV_RESET -> A109Command.formatPayload()
+        CommandType.REBUILD_ALL -> A109Command.formatPayload()
+        CommandType.DEV_RESET -> A111Command.formatPayload()
+        CommandType.CALIBRATION -> A113Command.formatPayload(calibrationValue, calibrationPositive)
         CommandType.NFC_READ -> "READ"
     }
 
@@ -151,6 +173,21 @@ fun MeterSettingScreen(
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            if (showFingerprintHint) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    ),
+                ) {
+                    Text(
+                        modifier = Modifier.padding(16.dp),
+                        text = "다음 실행부터는 로그인 화면에서 지문으로 로그인할 수 있습니다. 이 휴대폰에 등록된 지문을 사용합니다.",
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
             ExposedDropdownMenuBox(
                 expanded = expanded,
                 onExpandedChange = { expanded = !expanded }
@@ -255,10 +292,10 @@ fun MeterSettingScreen(
                     )
                     OutlinedTextField(
                         modifier = Modifier.fillMaxWidth(),
-                        value = singleValue,
+                        value = meterValue,
                         onValueChange = { value ->
                             if (value.length <= 8 && value.all { it.isDigit() }) {
-                                onSingleValueChange(value)
+                                onMeterValueChange(value)
                             }
                         },
                         enabled = inputEnabled,
@@ -289,6 +326,72 @@ fun MeterSettingScreen(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
                     )
                 }
+                CommandType.CALIBRATION -> {
+                    val maxRaw = if (calibrationPositive) {
+                        0xFFFF
+                    } else {
+                        A113Command.maxNegativeRaw(meterValue)
+                    }
+                    val meterLabel = if (A105Command.isValid(meterValue)) {
+                        A105Command.formatDisplay(meterValue)
+                    } else {
+                        "없음"
+                    }
+                    Text(
+                        text = "보정 방향",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (calibrationPositive) {
+                            Button(
+                                onClick = { onCalibrationPositiveChange(true) },
+                                modifier = Modifier.weight(1f),
+                                enabled = inputEnabled,
+                            ) { Text("양수 보정") }
+                        } else {
+                            OutlinedButton(
+                                onClick = { onCalibrationPositiveChange(true) },
+                                modifier = Modifier.weight(1f),
+                                enabled = inputEnabled,
+                            ) { Text("양수 보정") }
+                        }
+                        if (!calibrationPositive) {
+                            Button(
+                                onClick = { onCalibrationPositiveChange(false) },
+                                modifier = Modifier.weight(1f),
+                                enabled = inputEnabled,
+                            ) { Text("음수 보정") }
+                        } else {
+                            OutlinedButton(
+                                onClick = { onCalibrationPositiveChange(false) },
+                                modifier = Modifier.weight(1f),
+                                enabled = inputEnabled,
+                            ) { Text("음수 보정") }
+                        }
+                    }
+                    Text(
+                        text = "한 방향만 전송하고 다른 값은 0입니다. 100은 10.0입니다. 음수는 A105 검침값 $meterLabel 까지만 내릴 수 있고, 최소 단위는 0.1입니다.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedTextField(
+                        modifier = Modifier.fillMaxWidth(),
+                        value = calibrationValue,
+                        onValueChange = { value ->
+                            if (value.length <= 5 && value.all { it.isDigit() } && (value.toIntOrNull() ?: 0) <= maxRaw) {
+                                onCalibrationChange(value)
+                            }
+                        },
+                        enabled = inputEnabled,
+                        label = { Text(if (calibrationPositive) "양수 보정" else "음수 보정") },
+                        placeholder = { Text("0") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    )
+                }
                 CommandType.NFC_READ -> {
                     Text(
                         text = "태그에 저장된 값을 HEX로 읽어 필드별로 분류합니다.",
@@ -297,6 +400,7 @@ fun MeterSettingScreen(
                     )
                 }
                 CommandType.NFC_START,
+                CommandType.REBUILD_ALL,
                 CommandType.DEV_RESET,
                 CommandType.NFC_EXIT -> { /* 입력 필드 없음 */ }
             }
@@ -342,7 +446,7 @@ fun MeterSettingScreen(
                     Text(
                         text = when {
                             !isReadCommand -> "전송 명령: $command"
-                            writeState is NfcWriteState.Success && writeState.isRead -> "필드 분류 (hex 2글자 = 1Byte)"
+                            writeState is NfcWriteState.Success && writeState.isRead -> "길게 눌러 원하는 구간을 선택해 복사할 수 있습니다"
                             writeState is NfcWriteState.AwaitingTag -> "태그에 폰을 대주세요"
                             else -> "NFC Read 후 태그를 대면 여기에 표시됩니다"
                         },
@@ -427,10 +531,32 @@ fun MeterSettingScreen(
 
 @Composable
 private fun ReadResultList(text: String) {
+    SelectionContainer(modifier = Modifier.fillMaxWidth()) {
     Column(modifier = Modifier.fillMaxWidth()) {
         text.split("\n\n").forEach { block ->
             val lines = block.lines().filter { it.isNotBlank() }
-            if (lines.size >= 2) {
+            if (lines.size >= 2 && lines.first() == "원본") {
+                Spacer(modifier = Modifier.height(18.dp))
+                Text(
+                    text = lines.first(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            MaterialTheme.colorScheme.surface,
+                            RoundedCornerShape(8.dp),
+                        )
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    text = lines.drop(1).joinToString(""),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            } else if (lines.size >= 2) {
                 Spacer(modifier = Modifier.height(14.dp))
                 Text(
                     text = lines.first(),
@@ -451,6 +577,7 @@ private fun ReadResultList(text: String) {
                 )
             }
         }
+    }
     }
 }
 
@@ -500,7 +627,12 @@ private fun WriteStatusCard(
             if (writeState.isRead) {
                 "읽기 완료. 결과는 위 카드에서 확인하세요."
             } else {
-                "설정 완료: ${writeState.displayValue}"
+                val baseMessage = "설정 완료: ${writeState.displayValue}"
+                if (writeState.commandPrefix == A101Command.PREFIX) {
+                    "$baseMessage\n단말기 파란색 LED가 1초 간격으로 깜빡이면 NFC 모드에 들어온 것입니다."
+                } else {
+                    baseMessage
+                }
             },
             Color(0xFFDFF6DD),
             Color(0xFF1E4620),
@@ -533,7 +665,10 @@ fun MeterSettingScreenPreview() {
         MeterSettingScreen(
             integerPart = "12",
             decimalPart = "345678",
-            singleValue = "12345678",
+            singleValue = "06",
+            meterValue = "12345678",
+            calibrationValue = "0",
+            calibrationPositive = true,
             writeState = NfcWriteState.Idle,
             nfcAvailable = true,
             nfcEnabled = true,
@@ -542,6 +677,9 @@ fun MeterSettingScreenPreview() {
             onIntegerChange = {},
             onDecimalChange = {},
             onSingleValueChange = {},
+            onMeterValueChange = {},
+            onCalibrationChange = {},
+            onCalibrationPositiveChange = {},
             onWriteClick = { _, _ -> },
             onConfirmWrite = { _, _ -> },
             onDismissConfirm = {}

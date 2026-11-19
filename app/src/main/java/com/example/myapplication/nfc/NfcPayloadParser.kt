@@ -9,6 +9,7 @@ object NfcPayloadParser {
             text == A101Command.PREFIX -> "${A101Command.PREFIX} (${A101Command.formatDisplay()})"
             text == A102Command.PREFIX -> "${A102Command.PREFIX} (${A102Command.formatDisplay()})"
             text == A109Command.PREFIX -> "${A109Command.PREFIX} (${A109Command.formatDisplay()})"
+            text == A111Command.PREFIX -> "${A111Command.PREFIX} (${A111Command.formatDisplay()})"
             text.startsWith(A103Command.PREFIX) && text.length >= 12 -> {
                 val body = text.removePrefix(A103Command.PREFIX)
                 val year = body.take(2)
@@ -22,6 +23,12 @@ object NfcPayloadParser {
             text.startsWith(A107Command.PREFIX) && text.length >= 6 -> {
                 val body = text.removePrefix(A107Command.PREFIX).take(2)
                 "${A107Command.PREFIX} 검침 주기 ${A107Command.formatDisplay(body)}"
+            }
+            text.startsWith(A113Command.PREFIX) && text.length >= 12 -> {
+                val body = text.removePrefix(A113Command.PREFIX).take(8)
+                val positive = body.take(4).toIntOrNull(16)?.toString().orEmpty()
+                val negative = body.drop(4).take(4).toIntOrNull(16)?.toString().orEmpty()
+                "${A113Command.PREFIX} 보정값 ${A113Command.formatDisplay(positive, negative)}"
             }
             else -> text
         }

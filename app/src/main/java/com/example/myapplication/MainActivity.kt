@@ -11,9 +11,9 @@ import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import java.util.concurrent.atomic.AtomicBoolean
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,6 +26,8 @@ import com.example.myapplication.nfc.A103Command
 import com.example.myapplication.nfc.A105Command
 import com.example.myapplication.nfc.A107Command
 import com.example.myapplication.nfc.A109Command
+import com.example.myapplication.nfc.A111Command
+import com.example.myapplication.nfc.A113Command
 import com.example.myapplication.nfc.NfcReadFieldParser
 import com.example.myapplication.nfc.NfcReader
 import com.example.myapplication.nfc.NfcWriteState
@@ -35,7 +37,7 @@ import com.example.myapplication.ui.CommandType
 import com.example.myapplication.ui.MeterSettingScreen
 import com.example.myapplication.ui.theme.MyApplicationTheme
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     private var nfcAdapter: NfcAdapter? = null
 
     private var writeState by mutableStateOf<NfcWriteState>(NfcWriteState.Idle)
@@ -79,7 +81,12 @@ class MainActivity : ComponentActivity() {
                 var integerPart by rememberSaveable { mutableStateOf("") }
                 var decimalPart by rememberSaveable { mutableStateOf("") }
                 var singleValue by rememberSaveable { mutableStateOf("") }
+                var meterValue by rememberSaveable { mutableStateOf("") }
+                var calibrationValue by rememberSaveable { mutableStateOf("") }
+                var calibrationPositive by rememberSaveable { mutableStateOf(true) }
                 var showConfirmDialog by rememberSaveable { mutableStateOf(false) }
+
+                var showFingerprintHint by rememberSaveable { mutableStateOf(false) }
 
                 when {
                     showSplash -> {
@@ -90,7 +97,10 @@ class MainActivity : ComponentActivity() {
                     }
                     !isLoggedIn -> {
                         LoginScreen(
-                            onLoginSuccess = { isLoggedIn = true },
+                            onLoginSuccess = { showHint ->
+                                showFingerprintHint = showHint
+                                isLoggedIn = true
+                            },
                         )
                     }
                     else -> {
@@ -99,12 +109,16 @@ class MainActivity : ComponentActivity() {
                             integerPart = integerPart,
                             decimalPart = decimalPart,
                             singleValue = singleValue,
+                            meterValue = meterValue,
+                            calibrationValue = calibrationValue,
+                            calibrationPositive = calibrationPositive,
                             writeState = writeState,
                             nfcAvailable = nfcAvailable,
                             nfcEnabled = nfcEnabled,
                             showConfirmDialog = showConfirmDialog,
                             isNfcSessionActive = isNfcSessionActive,
                             isReadSession = pendingRead,
+                            showFingerprintHint = showFingerprintHint,
                             onIntegerChange = { value ->
                                 integerPart = value
                                 resetResultStateIfNeeded()
@@ -115,6 +129,23 @@ class MainActivity : ComponentActivity() {
                             },
                             onSingleValueChange = { value ->
                                 singleValue = value
+                                resetResultStateIfNeeded()
+                            },
+                            onMeterValueChange = { value ->
+                                meterValue = value
+                                resetResultStateIfNeeded()
+                            },
+                            onCalibrationChange = { value ->
+                                calibrationValue = value
+                                resetResultStateIfNeeded()
+                            },
+                            onCalibrationPositiveChange = { positive ->
+                                calibrationPositive = positive
+                                val maxRaw = if (positive) 0xFFFF else A113Command.maxNegativeRaw(meterValue)
+                                val current = calibrationValue.toIntOrNull() ?: 0
+                                if (current > maxRaw) {
+                                    calibrationValue = if (maxRaw == 0) "" else maxRaw.toString()
+                                }
                                 resetResultStateIfNeeded()
                             },
                             onCommandTypeChange = {
@@ -130,6 +161,9 @@ class MainActivity : ComponentActivity() {
                                     integerPart,
                                     decimalPart,
                                     singleValue,
+                                    meterValue,
+                                    calibrationValue,
+                                    calibrationPositive,
                                 )
                                 showConfirmDialog = true
                             },
@@ -144,6 +178,9 @@ class MainActivity : ComponentActivity() {
                                         integerPart,
                                         decimalPart,
                                         singleValue,
+                                        meterValue,
+                                        calibrationValue,
+                                        calibrationPositive,
                                     )
                                 }
                             },
@@ -197,6 +234,7 @@ class MainActivity : ComponentActivity() {
                 outState.putString(KEY_WRITE_STATE, STATE_SUCCESS)
                 outState.putString(KEY_WRITE_DETAIL, state.displayValue)
                 outState.putBoolean(KEY_SUCCESS_IS_READ, state.isRead)
+                outState.putString(KEY_SUCCESS_COMMAND, state.commandPrefix)
             }
             is NfcWriteState.Error -> {
                 outState.putString(KEY_WRITE_STATE, STATE_ERROR)
@@ -230,15 +268,20 @@ class MainActivity : ComponentActivity() {
         integerPart: String,
         decimalPart: String,
         singleValue: String,
+        meterValue: String,
+        calibrationValue: String,
+        calibrationPositive: Boolean,
     ) {
         pendingCommand = payload
         pendingDisplayValue = when (commandType) {
             CommandType.NFC_START -> A101Command.formatDisplay()
             CommandType.NFC_EXIT -> A102Command.formatDisplay()
             CommandType.METER_NUMBER -> A103Command.formatDisplay(integerPart, decimalPart)
-            CommandType.METER_VALUE -> A105Command.formatDisplay(singleValue)
+            CommandType.METER_VALUE -> A105Command.formatDisplay(meterValue)
             CommandType.REPORT_CYCLE -> A107Command.formatDisplay(singleValue)
-            CommandType.DEV_RESET -> A109Command.formatDisplay()
+            CommandType.REBUILD_ALL -> A109Command.formatDisplay()
+            CommandType.DEV_RESET -> A111Command.formatDisplay()
+            CommandType.CALIBRATION -> A113Command.formatDisplay(calibrationValue, calibrationPositive)
             CommandType.NFC_READ -> "태그 읽기"
         }
     }
@@ -249,8 +292,20 @@ class MainActivity : ComponentActivity() {
         integerPart: String,
         decimalPart: String,
         singleValue: String,
+        meterValue: String,
+        calibrationValue: String,
+        calibrationPositive: Boolean,
     ) {
-        preparePendingData(commandType, payload, integerPart, decimalPart, singleValue)
+        preparePendingData(
+            commandType,
+            payload,
+            integerPart,
+            decimalPart,
+            singleValue,
+            meterValue,
+            calibrationValue,
+            calibrationPositive,
+        )
         pendingRead = false
         writeState = NfcWriteState.AwaitingTag
         syncNfcReaderMode()
@@ -297,6 +352,7 @@ class MainActivity : ComponentActivity() {
             STATE_SUCCESS -> NfcWriteState.Success(
                 displayValue = savedInstanceState.getString(KEY_WRITE_DETAIL).orEmpty(),
                 isRead = savedInstanceState.getBoolean(KEY_SUCCESS_IS_READ, false),
+                commandPrefix = savedInstanceState.getString(KEY_SUCCESS_COMMAND),
             )
             STATE_ERROR -> NfcWriteState.Error(
                 message = savedInstanceState.getString(KEY_WRITE_DETAIL)
@@ -388,7 +444,10 @@ class MainActivity : ComponentActivity() {
                     A101Command.formatPayload() -> isNfcSessionActive = true   // NFC 모드 진입 → 나머지 메뉴 노출
                     A102Command.formatPayload() -> isNfcSessionActive = false  // NFC 모드 종료 → A101/A102만 노출
                 }
-                NfcWriteState.Success(displayValue = displayValue)
+                NfcWriteState.Success(
+                    displayValue = displayValue,
+                    commandPrefix = command,
+                )
             } else {
                 NfcWriteState.Error(
                     message = result.exceptionOrNull()?.message ?: "NFC Write에 실패했습니다.",
@@ -452,6 +511,7 @@ class MainActivity : ComponentActivity() {
         private const val KEY_WRITE_STATE = "write_state"
         private const val KEY_WRITE_DETAIL = "write_detail"
         private const val KEY_SUCCESS_IS_READ = "success_is_read"
+        private const val KEY_SUCCESS_COMMAND = "success_command"
         private const val KEY_AWAIT_DEADLINE = "await_deadline"
         private const val READ_SESSION_MARKER = "READ"
         private const val STATE_IDLE = "idle"

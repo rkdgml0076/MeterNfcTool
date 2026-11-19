@@ -19,7 +19,7 @@ object NfcReadFieldParser {
 
     const val TOTAL_HEX_CHARS = 80
 
-    // [길이, 시작위치, 필드명]
+    // [필드명, 시작위치, 길이, 필드명]
     val FIELDS: List<FieldSpec> = listOf(
         FieldSpec("cmdByte", 1, 4, "저장정보"),
         FieldSpec("meterNo", 5, 8, "계량기번호"),
@@ -78,13 +78,17 @@ object NfcReadFieldParser {
             "$byteCount Byte (${hex.length} hex / 전체 ${TOTAL_HEX_CHARS / 2} Byte)"
         }
 
-        return listOf(header).plus(lines).joinToString("\n\n")
+        return listOf(header)
+            .plus(lines)
+            .plus("원본\n$hex")
+            .joinToString("\n\n")
     }
 
     private fun displayValue(name: String, hexSlice: String): String {
         if (hexSlice.isEmpty()) return ""
         return when (name) {
             "meterNo" -> parseMeterNo(hexSlice)
+            "msrCnt" -> parseDecimal(hexSlice)
             "msrStdValue" -> littleEndianScaled(hexSlice)
             "FinalReport", "Finalmeter" -> parseDateTime(hexSlice)
             "devFw" -> parseFirmware(hexSlice)
@@ -105,6 +109,12 @@ object NfcReadFieldParser {
 
     private fun spacedHex(hexSlice: String): String {
         return hexSlice.chunked(2).joinToString(" ")
+    }
+
+    /** NV에 쌓인 검침 데이터 건수. hex를 십진수로 읽고 개를 붙인다. 18 → 24개 */
+    private fun parseDecimal(hexSlice: String): String {
+        val count = hexSlice.toIntOrNull(16) ?: return spacedHex(hexSlice)
+        return "${count}개"
     }
 
     /** 8글자를 앞 2글자-뒤 6글자로 나눈다. 12345678 → 12-345678 */

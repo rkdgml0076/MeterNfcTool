@@ -1,3 +1,88 @@
+### 2026-11-19 GitHub Commit
+#### 본 어플리케이션을 개발하기 위한 기본 작업 환경과 코드 프레임
+## 작업 환경 설정
+- 개발 환경(Code Editer) Android Studio 사용 <br>
+- MyApplication 기본 양식대로 Project 생성
+- Github 와 연동 및 git 활용을 위하여 git Download
+  Android Studio는 기본적으로 Git과 GitHub가 Plugins 되어있음
+- 코드 결과물 확인은 Clean and Assemble Project with Tests로 매번 빌드하여 확인중
+별도의 동작 결과 방법을 찾을 시 추후 기술
+- APK 파일 경로: 사용자디렉토리\AndroidStudioProjects\MyApplication\app\build\outputs\apk\debug\app-debug.apk
+
+
+## Ver 1.3.3 / 지문 로그인, A113 보정값
+<br>
+아이디와 비밀번호 로그인 뒤에 이 기기의 지문으로 다시 들어올 수 있게 했다. A113은 양수 또는 음수 보정 하나만 전송한다. 앱 버전은 1.3.3 (versionCode 8)
+
+### app/build.gradle.kts
+```kotlin
+        versionCode = 8
+        versionName = "1.3.3"
+```
+
+### A113Command(kotlin)
+```kotlin
+object A113Command {
+    const val PREFIX = "A113"
+    // 양수 100 -> 0064, 화면 +10.0. 선택하지 않은 방향은 0000
+    // 음수는 A105 검침값보다 더 내리지 않는다. 최소 단위는 0.1
+}
+```
+
+<br>
+
+### 진행 내용
+**Ver 1.3.3**
+1. 아이디와 비밀번호로 한 번 로그인하면 다음 실행부터 지문 로그인을 쓸 수 있다. 허용 표시는 앱 데이터에 남아서 업데이트 후에도 유지된다
+2. 비밀번호 로그인 직후 메인 화면에 다음 실행부터 지문으로 로그인할 수 있다는 안내를 표시한다
+3. A101 쓰기 완료 시 단말기 파란색 LED가 1초 간격으로 깜빡이면 NFC 모드에 들어온 것이라는 안내를 표시한다
+4. A113 보정값은 양수와 음수 중 하나만 고른다. 100은 +10.0, 20은 -2.0. 기본값은 0
+5. 음수 보정은 A105에 입력한 검침값까지만 내릴 수 있다
+<br>
+---
+
+### 2026-11-19 GitHub Commit
+#### 본 어플리케이션을 개발하기 위한 기본 작업 환경과 코드 프레임
+## 작업 환경 설정
+- 개발 환경(Code Editer) Android Studio 사용 <br>
+- MyApplication 기본 양식대로 Project 생성
+- Github 와 연동 및 git 활용을 위하여 git Download
+  Android Studio는 기본적으로 Git과 GitHub가 Plugins 되어있음
+- 코드 결과물 확인은 Clean and Assemble Project with Tests로 매번 빌드하여 확인중
+별도의 동작 결과 방법을 찾을 시 추후 기술
+- APK 파일 경로: 사용자디렉토리\AndroidStudioProjects\MyApplication\app\build\outputs\apk\debug\app-debug.apk
+
+
+## A109 초기화 / A111 재부팅
+<br>
+A109 메뉴 문구를 단말기 초기화로 맞추고, A111 단말기 재부팅 명령을 추가. 앱 버전은 1.3.2 (versionCode 7) 유지
+
+### A111Command(kotlin)
+```kotlin
+object A111Command {
+    const val PREFIX = "A111"
+    fun formatDisplay(): String = "단말기 재부팅"
+    fun formatPayload(): String = PREFIX
+    fun isValid(): Boolean = true
+}
+```
+
+### MeterSettingScreen(kotlin)
+```kotlin
+    REBUILD_ALL("단말기 초기화 (A109)", "A109"),
+    DEV_RESET("단말기 재부팅 (A111)", "A111"),
+```
+
+<br>
+
+### 진행 내용
+**A109 초기화 / A111 재부팅**
+1. A109 표시 문구를 `단말기 초기화`로 변경. 전송 명령은 `A109`
+2. A111 명령 클래스를 추가. 전송 명령은 `A111`, 화면 문구는 `단말기 재부팅`
+3. A101 성공 후에 A109와 A111이 함께 메뉴에 노출
+<br>
+---
+
 ### 2026-11-06 GitHub Commit
 #### 본 어플리케이션을 개발하기 위한 기본 작업 환경과 코드 프레임
 ## 작업 환경 설정
